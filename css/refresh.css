@@ -1,0 +1,23 @@
+/* ───────── Masrofi — Smooth Motion & Tactile Feedback ───────── */
+
+.phone .num,.phone .h-big,.phone .r-amt{font-variant-numeric:tabular-nums}
+
+/* Universal tactile press feedback */
+.phone :is(.row[data-act],.btn,.chip,.member,.fam-av,.icon-btn,.paid-btn,.stat,.cart-check,.sc-sim,.sc-side,.sc-x){
+  transition:transform .2s var(--bounce),background .25s,box-shadow .25s,border-color .25s,color .22s;
+}
+.phone :is(.row[data-act],.btn,.chip,.member,.fam-av,.icon-btn,.paid-btn,.stat,.cart-check,.sc-sim,.sc-side,.sc-x):active{
+  transform:scale(.95);
+}
+
+/* Material ripple (Android) */
+.ripple{position:absolute;border-radius:50%;pointer-events:none;background:currentColor;opacity:.14;transform:scale(0);animation:ripple .55s var(--ease) forwards}
+@keyframes ripple{to{transform:scale(1);opacity:0}}
+
+/* Smooth Directional Tab Transition */
+#scroll.tab-in > #screen{animation:tabIn .36s var(--spring) backwards}
+@keyframes tabIn{from{opacity:0;transform:translateX(var(--dx,16px))}to{opacity:1;transform:translateX(0)}}
+
+@media (prefers-reduced-motion:reduce){
+  .phone *,.phone *::after,.studio-bg .orb{animation:none!important;transition:none!important}
+}

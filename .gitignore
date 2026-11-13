@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+package-lock.json.bak
+
+# SQLite Database
+data/*.sqlite
+data/*.sqlite-journal
+data/*.sqlite-shm
+data/*.sqlite-wal
+
+# Build outputs
+dist/
+build/
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/*.iml
+android/app/*.iml
+android/local.properties
+
+# iOS build outputs
+ios/App/Pods/
+ios/App/build/
+ios/App/DerivedData/
+ios/App/.symlinks/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Test artifacts
+test/*.png
+
+# Environment and logs
+*.log
+npm-debug.log*
+.env

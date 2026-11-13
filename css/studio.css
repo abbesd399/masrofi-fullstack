@@ -1,0 +1,250 @@
+/* ───────── Desktop Preview Studio (outside the phone) ───────── */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:Inter,system-ui,sans-serif;color:#E6EAF2;overflow:hidden;position:relative;
+  background:#070A10;
+}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+
+/* Animated Aurora Studio Background */
+.studio-bg{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.studio-bg .orb{position:absolute;border-radius:50%;filter:blur(85px);opacity:.42;animation:orbFloat 18s ease-in-out infinite alternate}
+.studio-bg .orb-1{width:620px;height:620px;top:-15%;right:5%;background:radial-gradient(circle,#10B981,transparent 70%)}
+.studio-bg .orb-2{width:540px;height:540px;bottom:-18%;left:22%;background:radial-gradient(circle,#6366F1,transparent 70%);animation-duration:22s;animation-delay:-5s}
+.studio-bg .orb-3{width:440px;height:440px;top:35%;left:55%;background:radial-gradient(circle,#06B6D4,transparent 70%);animation-duration:15s;animation-delay:-9s;opacity:.28}
+.studio-grid{
+  position:absolute;inset:0;
+  background-image:
+    radial-gradient(circle at 1px 1px,rgba(255,255,255,.07) 1px,transparent 0),
+    linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);
+  background-size:24px 24px,96px 96px,96px 96px;
+  mask-image:radial-gradient(ellipse at 60% 50%,#000 35%,transparent 90%);
+  -webkit-mask-image:radial-gradient(ellipse at 60% 50%,#000 35%,transparent 90%);
+}
+@keyframes orbFloat{
+  0%{transform:translate(0,0) scale(1)}
+  50%{transform:translate(-35px,25px) scale(1.08)}
+  100%{transform:translate(25px,-30px) scale(.94)}
+}
+
+.studio{position:relative;z-index:1;display:grid;grid-template-columns:348px 1fr;height:100vh}
+
+/* control panel */
+.panel{
+  padding:26px 22px;overflow-y:auto;display:flex;flex-direction:column;gap:22px;scrollbar-width:none;
+  background:linear-gradient(180deg,rgba(15,20,30,.82),rgba(10,14,22,.88));
+  backdrop-filter:blur(28px) saturate(160%);-webkit-backdrop-filter:blur(28px) saturate(160%);
+  border-inline-end:1px solid rgba(255,255,255,.08);
+  box-shadow:12px 0 40px rgba(0,0,0,.35);
+}
+.panel::-webkit-scrollbar{display:none}
+.brand{display:flex;gap:14px;align-items:center}
+.brand-mark{
+  width:50px;height:50px;border-radius:16px;display:grid;place-items:center;position:relative;
+  font:700 26px "Readex Pro","IBM Plex Sans Arabic";color:#fff;
+  background:conic-gradient(from 210deg,#10B981,#06B6D4,#6366F1,#10B981);
+  box-shadow:0 10px 28px rgba(16,185,129,.4),inset 0 1.5px 0 rgba(255,255,255,.45);
+}
+.brand h1{font-size:20px;font-weight:800;letter-spacing:-.02em}
+.brand h1 span{font-family:"Readex Pro","IBM Plex Sans Arabic";font-weight:600;color:#6EE7B7;margin-inline-start:6px}
+.brand p{font-size:12px;color:#8A93A6;margin-top:2px}
+
+.ctl h2{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7E8A9F;font-weight:700;margin-bottom:8px}
+.seg{display:grid;grid-template-columns:1fr 1fr;padding:4px;border-radius:13px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.07);position:relative;gap:4px}
+.seg button{
+  padding:9px 8px;border-radius:9px;font-size:12.5px;font-weight:600;color:#A3ACBD;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  transition:all .25s cubic-bezier(.34,1.4,.64,1);
+}
+.seg button:hover:not(.on){color:#E6EAF2;background:rgba(255,255,255,.04)}
+.seg button.on{background:linear-gradient(180deg,#FFFFFF,#E6ECF5);color:#090D14;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.seg button[data-v=ar],.seg button[data-v=en]{font-family:"Readex Pro","IBM Plex Sans Arabic",Inter}
+.ctl-ic{flex:none;opacity:.88}
+
+.sim{
+  width:100%;display:flex;gap:12px;align-items:center;text-align:start;margin-bottom:8px;
+  padding:11px 13px;border-radius:14px;font-size:13px;font-weight:600;
+  background:linear-gradient(180deg,rgba(255,255,255,.065),rgba(255,255,255,.025));
+  border:1px solid rgba(255,255,255,.08);transition:transform .22s cubic-bezier(.34,1.4,.64,1),border-color .22s,background .22s,box-shadow .22s;
+}
+.sim:hover{border-color:rgba(110,231,183,.45);background:rgba(16,185,129,.1);box-shadow:0 8px 20px -8px rgba(16,185,129,.3)}
+.sim:active{transform:scale(.97)}
+.sim-ic{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:rgba(255,255,255,.08);color:#CBD5E1;flex:none}
+.sim-ic.warn{background:rgba(245,158,11,.16);color:#FBBF24}
+.sim-ic.info{background:rgba(59,130,246,.16);color:#60A5FA}
+.sim-ic.safe{background:rgba(16,185,129,.16);color:#34D399}
+.sim small{display:block;font-weight:400;color:#8A93A6;font-size:11.5px;margin-top:2px}
+.sim.ghost{background:transparent;color:#94A3B8;border-color:rgba(255,255,255,.06)}
+.sim.ghost:hover{color:#fff;background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.15);box-shadow:none}
+
+.refs{font-size:12px;color:#8A93A6;border-top:1px solid rgba(255,255,255,.08);padding-top:16px}
+.refs summary{cursor:pointer;font-weight:600;color:#C5CCD9}
+.refs ol{margin-top:10px;padding-inline-start:20px;display:grid;gap:6px}
+.refs b{color:#C5CCD9;font-weight:600}
+
+/* stage */
+.stage{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden}
+.device-holder{transform-origin:center;transform:scale(var(--scale,1));transition:transform .3s ease}
+.stage-hint{position:absolute;bottom:12px;max-width:480px;padding:0 16px;text-align:center;font-size:12px;line-height:1.5;color:#7C869A}
+.stage.compact .stage-hint{display:none}
+
+/* ───────── Device frames ───────── */
+.device{position:relative;width:414px;height:870px;padding:12px;border-radius:64px;transition:all .5s cubic-bezier(.34,1.3,.64,1)}
+.device[data-os=ios]{
+  background:linear-gradient(145deg,#646873,#2b2e35 30%,#18191e 60%,#4d515b);
+  box-shadow:0 0 0 2px #0d0e12,0 50px 110px rgba(0,0,0,.7),0 0 80px -20px rgba(16,185,129,.22),inset 0 0 0 2px rgba(255,255,255,.18);
+}
+.device[data-os=android]{
+  border-radius:48px;padding:10px;
+  background:linear-gradient(145deg,#33403b,#141917 40%,#0d1110 70%,#2a3531);
+  box-shadow:0 0 0 2px #070908,0 50px 110px rgba(0,0,0,.7),0 0 80px -20px rgba(16,185,129,.22),inset 0 0 0 1.5px rgba(255,255,255,.14);
+}
+.hw{position:absolute;width:4px;border-radius:2px;background:#2b2d33}
+.device[data-os=ios] .hw-a{left:-3px;top:150px;height:32px}
+.device[data-os=ios] .hw-b{left:-3px;top:210px;height:64px}
+.device[data-os=ios] .hw-c{left:-3px;top:290px;height:64px}
+.device[data-os=ios] .hw-d{right:-3px;top:240px;height:100px}
+.device[data-os=android] .hw-a{right:-3px;top:180px;height:110px;background:#1f2623}
+.device[data-os=android] .hw-b{right:-3px;top:320px;height:56px;background:#1f2623}
+.device[data-os=android] .hw-c,.device[data-os=android] .hw-d{display:none}
+
+/* Desktop settings icon hidden when panel is visible */
+.mobile-settings-btn{display:none}
+
+/* ───────── True Multi-Device Responsive Mobile Adaptation ───────── */
+@media (max-width:899px), (display-mode:standalone) {
+  html,body{
+    width:100%;height:100%;overflow:hidden;
+    background:var(--bg,#0B0F17);
+  }
+  .studio-bg,
+  .panel,
+  .stage-hint,
+  .hw{
+    display:none !important;
+  }
+  .studio{
+    display:block !important;
+    width:100vw !important;
+    height:100dvh !important;
+    margin:0 !important;
+    padding:0 !important;
+    overflow:hidden !important;
+  }
+  .stage{
+    display:block !important;
+    width:100vw !important;
+    height:100dvh !important;
+    margin:0 !important;
+    padding:0 !important;
+    overflow:hidden !important;
+  }
+  .device-holder{
+    width:100vw !important;
+    height:100dvh !important;
+    transform:none !important;
+    margin:0 !important;
+    padding:0 !important;
+  }
+  .device{
+    width:100vw !important;
+    height:100dvh !important;
+    border-radius:0 !important;
+    border:0 !important;
+    box-shadow:none !important;
+    background:transparent !important;
+    padding:0 !important;
+    margin:0 !important;
+  }
+  .phone{
+    width:100vw !important;
+    height:100dvh !important;
+    border-radius:0 !important;
+    border:0 !important;
+    box-shadow:none !important;
+  }
+  /* Hide simulated statusbar, island and home-indicator on real mobile */
+  .statusbar,
+  .island,
+  .home-ind{
+    display:none !important;
+  }
+  .appbar{
+    padding-top:max(12px, env(safe-area-inset-top)) !important;
+  }
+  .nav{
+    height:calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom:max(8px, env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .scroll{
+    padding-bottom:calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 24px) !important;
+  }
+  .sheet{
+    padding-bottom:max(16px, env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .mobile-settings-btn{
+    display:grid !important;
+  }
+}
+
+/* Standalone / native mobile class overrides */
+body.is-mobile .studio-bg,
+body.is-mobile .panel,
+body.is-mobile .stage-hint,
+body.is-mobile .hw,
+body.native-app .studio-bg,
+body.native-app .panel,
+body.native-app .stage-hint,
+body.native-app .hw{
+  display:none !important;
+}
+body.is-mobile .studio,
+body.is-mobile .stage,
+body.is-mobile .device-holder,
+body.is-mobile .device,
+body.is-mobile .phone,
+body.native-app .studio,
+body.native-app .stage,
+body.native-app .device-holder,
+body.native-app .device,
+body.native-app .phone{
+  width:100vw !important;
+  height:100dvh !important;
+  border-radius:0 !important;
+  border:0 !important;
+  box-shadow:none !important;
+  transform:none !important;
+  margin:0 !important;
+  padding:0 !important;
+}
+body.is-mobile .statusbar,
+body.is-mobile .island,
+body.is-mobile .home-ind,
+body.native-app .statusbar,
+body.native-app .island,
+body.native-app .home-ind{
+  display:none !important;
+}
+body.is-mobile .appbar,
+body.native-app .appbar{
+  padding-top:max(14px, env(safe-area-inset-top)) !important;
+}
+body.is-mobile .nav,
+body.native-app .nav{
+  height:calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)) !important;
+  padding-bottom:max(8px, env(safe-area-inset-bottom, 0px)) !important;
+}
+body.is-mobile .scroll,
+body.native-app .scroll{
+  padding-bottom:calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 24px) !important;
+}
+body.is-mobile .sheet,
+body.native-app .sheet{
+  padding-bottom:max(16px, env(safe-area-inset-bottom, 0px)) !important;
+}
+body.is-mobile .mobile-settings-btn,
+body.native-app .mobile-settings-btn{
+  display:grid !important;
+}

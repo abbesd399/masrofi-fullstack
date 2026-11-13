@@ -1,0 +1,31 @@
+{
+  "name": "masrofi",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "build": "node scripts/build.js",
+    "cap:sync": "node scripts/build.js && npx cap sync",
+    "test:api": "node test/api.test.js",
+    "test:browser": "node test/browser.test.js",
+    "test:audit": "node test/audit-ui.test.js",
+    "test": "node test/api.test.js && node test/browser.test.js && node test/audit-ui.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/camera": "^8.2.6",
+    "@capacitor/cli": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2",
+    "cors": "^2.8.6",
+    "express": "^5.3.0"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.17.0"
+  }
+}

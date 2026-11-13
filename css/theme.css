@@ -1,0 +1,128 @@
+/* ───────── Phone shell + refined, calm design tokens (iOS HIG / Material 3) ───────── */
+.phone{
+  position:relative;width:100%;height:100%;overflow:hidden;border-radius:52px;isolation:isolate;
+  font-family:var(--font);color:var(--text);background:var(--bg);
+  -webkit-font-smoothing:antialiased;transition:background .35s ease,color .3s ease;
+  /* 8pt grid */
+  --s1:8px;--s2:16px;--s3:22px;--s4:32px;
+  --safe:#10B981;--warn:#F59E0B;--crit:#F43F5E;--info:#3B82F6;
+  --spring:cubic-bezier(.22,1,.36,1);--bounce:cubic-bezier(.34,1.45,.64,1);--ease:cubic-bezier(.22,1,.36,1);
+}
+.phone[data-os=android]{border-radius:38px}
+
+/* iOS 18 — Calm, clean Slate & Jade palette */
+.phone[data-os=ios]{
+  --font:-apple-system,"SF Pro Text","SF Arabic",Inter,"Readex Pro","IBM Plex Sans Arabic",sans-serif;
+  --r-card:22px;--r-sm:14px;--r-sheet:24px;
+  --nav-h:82px;--status-h:54px;
+}
+.phone[data-os=ios][data-theme=light]{
+  --bg:#F4F6F9;--surface:#FFFFFF;--surface-2:#EEF2F6;--surface-3:#E2E8F0;
+  --text:#0F172A;--muted:#64748B;--line:rgba(15,23,42,.07);
+  --primary:#0D9488;--on-primary:#FFFFFF;--primary-soft:rgba(13,148,136,.12);--on-primary-soft:#0F766E;
+  --glass:rgba(255,255,255,.86);--shadow:0 1px 3px rgba(15,23,42,.04),0 8px 24px -8px rgba(15,23,42,.07);
+}
+.phone[data-os=ios][data-theme=dark]{
+  --bg:#0B0F17;--surface:#131B26;--surface-2:#1C2636;--surface-3:#283548;
+  --text:#F8FAFC;--muted:#94A3B8;--line:rgba(255,255,255,.07);
+  --primary:#2DD4BF;--on-primary:#042F2E;--primary-soft:rgba(45,212,191,.14);--on-primary-soft:#5EEAD4;
+  --glass:rgba(19,27,38,.86);--shadow:0 8px 24px -8px rgba(0,0,0,.45);
+}
+
+/* Material 3 — Clean tonal surfaces */
+.phone[data-os=android]{
+  --font:Roboto,"Readex Pro","IBM Plex Sans Arabic",system-ui,sans-serif;
+  --r-card:24px;--r-sm:16px;--r-sheet:28px;
+  --nav-h:90px;--status-h:40px;
+}
+.phone[data-os=android][data-theme=light]{
+  --bg:#F4F7F8;--surface:#FFFFFF;--surface-2:#EDF2F4;--surface-3:#DFE7EB;
+  --text:#0F172A;--muted:#52606D;--line:rgba(15,23,42,.08);
+  --primary:#0F766E;--on-primary:#FFFFFF;--primary-soft:#CCFBF1;--on-primary-soft:#115E59;
+  --secondary-soft:#CCFBF1;--on-secondary-soft:#0F766E;
+  --glass:rgba(255,255,255,.9);--shadow:0 1px 3px rgba(15,23,42,.05),0 6px 18px -6px rgba(15,23,42,.06);
+}
+.phone[data-os=android][data-theme=dark]{
+  --bg:#0B0F17;--surface:#141C27;--surface-2:#1E293B;--surface-3:#293649;
+  --text:#F1F5F9;--muted:#94A3B8;--line:rgba(255,255,255,.08);
+  --primary:#2DD4BF;--on-primary:#042F2E;--primary-soft:rgba(45,212,191,.16);--on-primary-soft:#5EEAD4;
+  --secondary-soft:rgba(45,212,191,.16);--on-secondary-soft:#5EEAD4;
+  --glass:rgba(20,28,39,.9);--shadow:0 8px 24px -8px rgba(0,0,0,.5);
+}
+.phone[lang=ar]{--font:"Readex Pro","IBM Plex Sans Arabic",system-ui,sans-serif}
+/* Zero-specificity reset so component classes (.btn, .chip, .paid-btn, .cart-check) always win! */
+:where(.phone button){font:inherit;color:inherit;border:0;background:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+:where(.phone input){font:inherit;color:inherit}
+
+/* status bar + camera cutouts */
+.statusbar{
+  position:absolute;inset:0 0 auto;height:var(--status-h);z-index:60;
+  display:flex;align-items:center;justify-content:space-between;padding:0 30px 0 34px;
+  font-weight:600;font-size:15px;pointer-events:none;color:var(--text);direction:ltr;
+}
+.phone[data-os=android] .statusbar{padding:0 24px;font-size:13.5px;font-weight:500}
+.statusbar .sb-icons{display:flex;gap:6px;align-items:center}
+.statusbar.light-ink{color:#fff}
+.island{position:absolute;z-index:70;left:50%;transform:translateX(-50%);transition:all .4s var(--bounce);background:#000}
+.phone[data-os=ios] .island{top:11px;width:122px;height:35px;border-radius:20px}
+.phone[data-os=android] .island{top:12px;width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 3px #1a1a1a}
+.home-ind{position:absolute;z-index:80;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--text);opacity:.7;pointer-events:none}
+.phone[data-os=android] .home-ind{width:108px;height:4px;opacity:.45;bottom:6px}
+
+/* app scaffolding */
+.app{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column}
+.appbar{padding:calc(var(--status-h) + 6px) 16px 10px;display:flex;align-items:center;gap:8px;z-index:5;background:var(--bg);transition:background .35s}
+.appbar .ab-title{flex:1;min-width:0}
+.appbar .ab-sub{font-size:12px;font-weight:500;color:var(--muted);line-height:1.4;margin-bottom:4px}
+.appbar h2{font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.3}
+.phone[data-os=android] .appbar h2{font-size:22px;font-weight:600;letter-spacing:0;line-height:1.3}
+.phone[lang=ar] .appbar h2{letter-spacing:0}
+.icon-btn{
+  width:40px;height:40px;border-radius:50%;display:grid;place-items:center;
+  background:var(--surface);box-shadow:var(--shadow);border:1px solid var(--line);position:relative;flex:none;
+}
+.icon-btn .dot{position:absolute;top:8px;inset-inline-end:8px;width:8px;height:8px;border-radius:50%;background:var(--crit);box-shadow:0 0 0 2px var(--bg)}
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;padding-bottom:calc(var(--nav-h) + 36px)}
+.scroll::-webkit-scrollbar{display:none}
+.screen{padding:4px var(--s3) 12px;display:flex;flex-direction:column;gap:16px}
+
+/* ── Bottom navigation: iOS frosted tab bar ── */
+.nav{position:absolute;inset:auto 0 0;height:var(--nav-h);z-index:20;display:flex;align-items:flex-start;transition:background .35s}
+.phone[data-os=ios] .nav{
+  background:var(--glass);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-top:1px solid var(--line);padding:7px 8px 0;
+}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;font-weight:600;color:var(--muted);transition:color .22s}
+.nav-item.on{color:var(--primary)}
+.nav-item .ni-ico{width:50px;height:28px;border-radius:14px;display:grid;place-items:center;position:relative;transition:background .28s,transform .3s var(--bounce)}
+.phone[data-os=ios] .nav-item.on .ni-ico{background:var(--primary-soft)}
+.nav-item.pop .ni-ico{animation:navPop .42s var(--bounce)}
+@keyframes navPop{0%{transform:scale(1)}40%{transform:scale(.86)}75%{transform:scale(1.1)}100%{transform:scale(1)}}
+
+.nav-scan{flex:1;display:flex;justify-content:center}
+.nav-scan span{
+  width:54px;height:54px;margin-top:-18px;border-radius:50%;display:grid;place-items:center;color:#fff;
+  background:linear-gradient(135deg,#14B8A6,#0F766E);
+  box-shadow:0 8px 20px -4px rgba(13,148,136,.5),0 0 0 4px var(--bg);
+  transition:transform .25s var(--bounce);
+}
+.nav-scan:active span{transform:scale(.9)}
+
+/* ── Material 3 navigation bar + FAB ── */
+.phone[data-os=android] .nav{background:var(--surface);border-top:1px solid var(--line);padding:10px 8px 0;height:90px}
+.phone[data-os=android] .nav-item{font-size:11.5px;gap:4px;color:var(--muted);font-weight:500}
+.phone[data-os=android] .nav-item .ni-ico{width:60px;height:30px;border-radius:15px;position:relative}
+.phone[data-os=android] .nav-item .ni-ico::before{content:"";position:absolute;inset:0;border-radius:15px;background:var(--secondary-soft);transform:scaleX(0);transition:transform .3s var(--spring)}
+.phone[data-os=android] .nav-item .ni-ico .ic{position:relative;z-index:1}
+.phone[data-os=android] .nav-item.on{color:var(--text);font-weight:700}
+.phone[data-os=android] .nav-item.on .ni-ico{color:var(--on-secondary-soft)}
+.phone[data-os=android] .nav-item.on .ni-ico::before{transform:scaleX(1)}
+.phone[data-os=android] .nav-scan{display:none}
+.fab{display:none}
+.phone[data-os=android] .fab{
+  display:flex;align-items:center;gap:8px;position:absolute;z-index:21;bottom:104px;inset-inline-end:16px;
+  height:50px;padding:0 18px 0 15px;border-radius:16px;background:var(--primary);color:var(--on-primary);
+  font-weight:600;font-size:13.5px;box-shadow:0 8px 20px -4px rgba(13,148,136,.45);
+  transition:transform .22s var(--bounce);
+}
+.phone[data-os=android] .fab:active{transform:scale(.94)}

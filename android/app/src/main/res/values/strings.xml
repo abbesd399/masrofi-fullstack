@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Masrofi · مصروفي</string>
+    <string name="title_activity_main">Masrofi · مصروفي</string>
+    <string name="package_name">com.masrofi.app</string>
+    <string name="custom_url_scheme">com.masrofi.app</string>
+</resources>

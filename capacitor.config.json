@@ -1,0 +1,13 @@
+{
+  "appId": "com.masrofi.app",
+  "appName": "Masrofi · مصروفي",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "Camera": {
+      "permissionsType": "prompt"
+    }
+  }
+}
