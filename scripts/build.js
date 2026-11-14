@@ -42,10 +42,13 @@ function build() {
     }
   }
 
-  // Sync icons to iOS
+  // Sync icons to iOS (Must be 1024x1024 for Xcode actool)
   const iosIcon = path.join(ROOT, 'ios', 'App', 'App', 'Assets.xcassets', 'AppIcon.appiconset', 'AppIcon-512@2x.png');
+  const srcIcon1024 = path.join(ROOT, 'assets', 'icon-1024.png');
   const srcIcon512 = path.join(ROOT, 'assets', 'icon-512.png');
-  if (fs.existsSync(srcIcon512) && fs.existsSync(path.dirname(iosIcon))) {
+  if (fs.existsSync(srcIcon1024) && fs.existsSync(path.dirname(iosIcon))) {
+    fs.copyFileSync(srcIcon1024, iosIcon);
+  } else if (fs.existsSync(srcIcon512) && fs.existsSync(path.dirname(iosIcon)) && !fs.existsSync(iosIcon)) {
     fs.copyFileSync(srcIcon512, iosIcon);
   }
 
