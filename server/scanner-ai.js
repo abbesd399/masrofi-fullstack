@@ -137,9 +137,15 @@ If mode is "bill":
         const base64Data = body.image.slice(commaIdx + 1);
         parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
       }
+      const isBearer = aiCfg.aiApiKey.startsWith('AQ.') || aiCfg.aiApiKey.startsWith('ya29.');
+      const headers = {
+        'x-goog-api-key': aiCfg.aiApiKey,
+        ...(isBearer ? { Authorization: `Bearer ${aiCfg.aiApiKey}` } : {})
+      };
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(aiCfg.aiApiKey)}`;
       const res = await jsonRequest(url, {
         method: 'POST',
+        headers,
         body: {
           contents: [{ parts }],
           generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }

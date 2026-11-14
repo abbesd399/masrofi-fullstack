@@ -25,7 +25,7 @@ function loadDotEnv() {
 }
 loadDotEnv();
 
-function jsonRequest(urlStr, { method = 'GET', headers = {}, body = null, timeout = 12000 } = {}) {
+function jsonRequest(urlStr, { method = 'GET', headers = {}, body = null, timeout = 25000 } = {}) {
   return new Promise((resolve, reject) => {
     let parsed;
     try {
