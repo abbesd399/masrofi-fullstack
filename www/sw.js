@@ -1,4 +1,4 @@
-const CACHE_NAME = 'masrofi-cache-v5';
+const CACHE_NAME = 'masrofi-cache-v9';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -24,6 +24,8 @@ const STATIC_ASSETS = [
   './assets/icon-512.png'
 ];
 
+let cachedBgAlert = null;
+
 self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil(
@@ -36,6 +38,66 @@ self.addEventListener('activate', event => {
     caches.keys().then(keys => Promise.all(
       keys.map(key => key !== CACHE_NAME ? caches.delete(key) : Promise.resolve())
     )).then(() => self.clients.claim())
+  );
+});
+
+/* Background & Outside-App Notifications Handler */
+self.addEventListener('message', event => {
+  const data = event.data || {};
+  if (data.type === 'SCHEDULE_NOTIFICATION') {
+    const delay = Math.max(0, Number(data.delayMs) || 0);
+    setTimeout(() => {
+      self.registration.showNotification(data.title || 'مصروفي · Masrofi', {
+        body: data.body || '',
+        icon: './assets/icon-192.png',
+        badge: './assets/icon-192.png',
+        vibrate: [200, 100, 200],
+        tag: 'masrofi-scheduled-' + Date.now(),
+        renotify: true
+      }).catch(() => {});
+    }, delay);
+  } else if (data.type === 'SYNC_BG_ALERTS') {
+    cachedBgAlert = {
+      title: data.title || 'تنبيه الذكاء الاصطناعي لهذا الشهر',
+      body: data.body || ''
+    };
+  } else if (data.type === 'APP_BACKGROUNDED' && cachedBgAlert && data.notifyOnExit) {
+    self.registration.showNotification(cachedBgAlert.title, {
+      body: cachedBgAlert.body,
+      icon: './assets/icon-192.png',
+      badge: './assets/icon-192.png',
+      vibrate: [200, 100, 200],
+      tag: 'masrofi-monthly-ai',
+      renotify: false
+    }).catch(() => {});
+  }
+});
+
+self.addEventListener('push', event => {
+  let payload = { title: 'مصروفي · Masrofi', body: 'تنبيه جديد من محفظة العائلة' };
+  try {
+    if (event.data) payload = Object.assign(payload, event.data.json());
+  } catch {}
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: './assets/icon-192.png',
+      badge: './assets/icon-192.png',
+      vibrate: [200, 100, 200],
+      tag: 'masrofi-push'
+    })
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      for (const client of clientList) {
+        if ('focus' in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow('./');
+    })
   );
 });
 

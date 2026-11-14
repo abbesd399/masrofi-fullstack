@@ -1,4 +1,4 @@
-/* Tab 1 — Home dashboard: alert banner · hero salary card · family strip · family invite code & link */
+/* Tab 1 — Home dashboard: AI monthly alert banner (7,000 km oil + bills) · hero salary card · family strip · simplified profile */
 M.screens = M.screens || {};
 M.acts = M.acts || {};
 
@@ -12,20 +12,21 @@ M.waves = () => `
   </div>`;
 
 M.screens.home = () => {
-  const s = M.s, c = M.calc(), unpaid = (s.bills || []).filter(b => !b.paid);
-  const ins = unpaid[0];
+  const s = M.s, c = M.calc();
   const last = (s.purchases || [])[0];
   const lm = last ? M.member(last.member) : null;
   const ar = s.lang === 'ar';
+  const aiAlert = M.getMonthlyAIAlert ? M.getMonthlyAIAlert() : { title: M.t('alertTitle'), body: '', oil: { dueThisMonth: false }, unpaid: [] };
 
   let banner = '';
-  if (unpaid.length > 0) {
-    banner = s.bannerHidden
-      ? `<button type="button" class="banner-mini anim" data-act="banner-show">${M.ico('bell', 15)} ${M.t('alertMini')} · ${unpaid.length}</button>`
-      : `<div class="banner anim" data-act="banner-open" id="banner">
-          <span class="b-ico">${M.ico('bell', 18, 2)}</span>
-          <div class="b-txt"><b>${M.t('alertTitle')}</b>${M.t('alertBody')(unpaid.length, ins?.due ?? '—')}</div>
-          <button type="button" class="b-x" data-act="banner-hide" aria-label="dismiss">${M.ico('close', 14, 2.4)}</button></div>`;
+  if (s.bannerHidden) {
+    banner = `<button type="button" class="banner-mini anim" data-act="banner-show">${M.ico('spark', 14)} ${aiAlert.title}</button>`;
+  } else {
+    banner = `<div class="banner anim" data-act="banner-open" id="banner">
+      <span class="b-ico">${M.ico('spark', 18, 2)}</span>
+      <div class="b-txt"><b>${aiAlert.title}</b>${aiAlert.body}</div>
+      <button type="button" class="b-x" data-act="banner-hide" aria-label="dismiss">${M.ico('close', 14, 2.4)}</button>
+    </div>`;
   }
 
   const tickerHtml = last
@@ -112,21 +113,55 @@ M.acts['banner-show'] = () => {
 };
 M.acts['banner-open'] = () => {
   const ar = M.s.lang === 'ar';
-  const unpaid = (M.s.bills || []).filter(b => !b.paid).sort((a, b) => a.due - b.due);
-  if (!unpaid.length) {
-    return M.sheet.open(M.t('alertTitle'), `
-      <div class="empty">${M.illu('done')}<h4>${M.t('allPaid')}</h4><p>${M.t('allPaidSub')}</p></div>
-      <button type="button" class="btn" data-act="goto-bills">${M.t('viewBills')}</button>`);
-  }
-  M.sheet.open(M.t('alertTitle'), `
-    <div class="alert-box" style="--bc:var(--warn)"><span class="ab-i">${M.ico('bell', 20)}</span><div>${M.t('alertBody')(unpaid.length, unpaid[0]?.due ?? 15)}</div></div>
-    <div class="group">${unpaid.map(b => `<div class="row" data-act="bill" data-id="${b.id}">${M.tile(b.cat)}
-      <div class="r-main"><div class="r-t">${M.L(b.n)}</div>
-        <div class="r-s"><span>${M.t('dueOn')(M.dateStr(b.due))}</span> · <span class="b-kind ${b.kind === 'var' ? 'var' : 'fixed'}">${M.t(b.kind === 'var' ? 'billVar' : 'billFixed')}</span></div></div>
-      <div class="r-end"><div class="r-amt priv">${M.money(b.amount)}</div><span class="badge info">${M.t('reservedAuto')}</span></div></div>`).join('')}</div>
-    <button type="button" class="btn" data-act="goto-bills">${M.t('viewBills')}</button>`);
+  const aiAlert = M.getMonthlyAIAlert ? M.getMonthlyAIAlert() : { title: M.t('alertTitle'), body: '', oil: M.getCarOilStatus(), unpaid: [] };
+  const oil = aiAlert.oil;
+  const unpaid = aiAlert.unpaid || [];
+
+  M.sheet.open(aiAlert.title, `
+    <div class="alert-box" style="--bc:var(--primary)">
+      <span class="ab-i">${M.ico('spark', 20)}</span>
+      <div><b>${ar ? 'المساعد الذكي لهذا الشهر' : 'Monthly AI Assistant'}</b> — ${aiAlert.body}</div>
+    </div>
+
+    <div class="sec-h" style="margin-top:4px"><h3>${ar ? 'متابعة زيت السيارة (دائماً عند 7,000 كم)' : 'Car Oil Change Tracker (Always at 7,000 km)'}</h3></div>
+    <div class="group">
+      <div class="row" data-act="goto-car">
+        <span class="tile" style="--c:#F59E0B">${M.ico('drop', 20)}</span>
+        <div class="r-main">
+          <div class="r-t">${ar ? 'تغيير زيت المحرك (كل 7,000 كم)' : 'Engine Oil Change (Every 7,000 km)'} <span class="badge info">AI</span></div>
+          <div class="r-s">${ar ? `العداد: ${M.fmt(oil.odo)} كم · التغيير عند: ${M.fmt(oil.nextOil)} كم` : `Current: ${M.fmt(oil.odo)} km · Always at: ${M.fmt(oil.nextOil)} km`}</div>
+        </div>
+        <div class="count ${oil.toOil <= 1000 ? 'crit' : 'warn'}"><b class="num">${M.fmt(oil.toOil)}</b><span>${M.t('km')}</span></div>
+      </div>
+    </div>
+
+    <div class="sec-h" style="margin-top:4px"><h3>${ar ? 'تعبئة البنزين (اكتب سعر التعبئة)' : 'Petrol Fill-Up (Enter Price)'}</h3></div>
+    <form class="add-item" data-form="fuel-add">
+      <div class="add-row">
+        <div class="in-wrap in-price" style="flex:1">
+          <input name="fuelPrice" type="text" inputmode="decimal" required placeholder="${ar ? 'سعر التعبئة (مثال: 1500 د.ج)' : 'Enter petrol fill-up price (e.g. 1500 DZD)'}" autocomplete="off">
+        </div>
+        <button type="submit" class="btn sm" style="height:44px;padding:0 14px;border-radius:12px;flex:none">
+          ${M.ico('fuel', 15, 2.2)} <span>${ar ? 'تسجيل البنزين' : 'Save Fuel'}</span>
+        </button>
+      </div>
+    </form>
+
+    ${unpaid.length ? `
+      <div class="sec-h" style="margin-top:4px"><h3>${ar ? 'فواتير هذا الشهر غير المسددة' : 'Unpaid Bills This Month'}</h3></div>
+      <div class="group">${unpaid.map(b => `<div class="row" data-act="bill" data-id="${b.id}">${M.tile(b.cat)}
+        <div class="r-main"><div class="r-t">${M.L(b.n)}</div>
+          <div class="r-s"><span>${M.t('dueOn')(M.dateStr(b.due))}</span> · <span class="b-kind ${b.kind === 'var' ? 'var' : 'fixed'}">${M.t(b.kind === 'var' ? 'billVar' : 'billFixed')}</span></div></div>
+        <div class="r-end"><div class="r-amt priv">${M.money(b.amount)}</div><span class="badge info">${M.t('reservedAuto')}</span></div></div>`).join('')}</div>
+    ` : ''}
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+      <button type="button" class="btn tonal" data-act="ai-month-notify">${M.ico('bell', 16, 2)} <span>${ar ? 'إرسال إشعار الشهر' : 'Send Month Alert'}</span></button>
+      <button type="button" class="btn" data-act="goto-car">${M.ico('car', 16, 2)} <span>${ar ? 'قسم السيارة والفواتير' : 'Car & Bills Hub'}</span></button>
+    </div>`);
 };
-M.acts['goto-bills'] = () => { M.sheet.close(); M.go('bills'); };
+M.acts['goto-bills'] = () => { M.sheet.close(); M.s.billSeg = 'bills'; M.go('bills'); };
+M.acts['goto-car'] = () => { M.sheet.close(); M.s.billSeg = 'car'; M.go('bills'); };
 M.acts.privacy = (el, ev) => {
   ev.stopPropagation(); M.s.privacy = !M.s.privacy;
   M.phone().classList.toggle('blurred', M.s.privacy);
@@ -135,7 +170,7 @@ M.acts.privacy = (el, ev) => {
   M.toast(M.t(M.s.privacy ? 'privacyOn' : 'privacyOff'));
 };
 
-/* ── Family Invite Code, Shareable Link & Add Member Sheet ── */
+/* ── Family Invite Code, Shareable Link & Simplified Add Member Sheet (No Role Picker) ── */
 M.acts['family-invite'] = () => {
   const ar = M.s.lang === 'ar';
   if (!M.s.familyCode) {
@@ -164,23 +199,21 @@ M.acts['family-invite'] = () => {
 
     <div class="sec-h" style="margin:4px 0 0"><h3>${ar ? 'إضافة فرد جديد للمحفظة' : 'Add Family Member'}</h3></div>
     <form class="manual-form" data-form="add-member">
-      <label>${ar ? 'اسم فرد العائلة' : 'Member Name'}
-        <input name="mname" required placeholder="${ar ? 'مثال: أم خالد، سارة، محمد…' : 'e.g. Mom, Sara…'}" autocomplete="off">
+      <label>${ar ? 'الاسم' : 'Name'}
+        <input name="mname" required placeholder="${ar ? 'مثال: محمد، سارة…' : 'e.g. Sarah, Mohamed…'}" autocomplete="off">
       </label>
-      <label>${ar ? 'الصفة / الدور في العائلة' : 'Role in Family'}
-        <input name="mrole" placeholder="${ar ? 'مثال: الأم، الابن، الابنة…' : 'e.g. Mom, Son, Daughter…'}" value="${ar ? 'فرد من العائلة' : 'Family member'}" autocomplete="off">
-      </label>
-      <label>${ar ? 'الشخصية الرمزية' : 'Character Avatar'}
+      <label>${ar ? 'لون أيقونة البروفايل' : 'Profile Badge Color'}
         <div class="av-grid" id="addMemAvGrid">
-          ${['abu', 'umm', 'khalid', 'sara'].map((avKey, idx) => `
-            <div class="av-pick ${idx === 1 ? 'on' : ''}" data-act="pick-av" data-v="${avKey}">
+          ${[['umm', ar ? 'أزرق' : 'Blue'], ['khalid', ar ? 'بنفسجي' : 'Purple'], ['sara', ar ? 'ذهبي' : 'Amber'], ['abu', ar ? 'زمردي' : 'Teal']].map(([avKey, lbl], idx) => `
+            <div class="av-pick ${idx === 0 ? 'on' : ''}" data-act="pick-av" data-v="${avKey}">
               <span class="av has-char">${M.CHARS[avKey]}</span>
+              <span>${lbl}</span>
             </div>
           `).join('')}
         </div>
         <input type="hidden" name="avatar" value="umm">
       </label>
-      <button class="btn" type="submit">${M.ico('plus', 18, 2.5)} ${ar ? 'إضافة للعائلة' : 'Add Member'}</button>
+      <button class="btn" type="submit">${M.ico('plus', 18, 2.5)} <span>${ar ? 'إضافة للعائلة' : 'Add Member'}</span></button>
     </form>
 
     <div class="group" style="margin-top:4px;padding:12px 14px">
@@ -234,18 +267,17 @@ M.acts['share-fam-link'] = async el => {
 M.saveAddMember = f => {
   const ar = M.s.lang === 'ar';
   const name = (f.mname.value || '').trim();
-  const role = (f.mrole.value || '').trim() || (ar ? 'فرد من العائلة' : 'Family member');
   const avatar = f.avatar?.value || 'umm';
   if (!name) return;
   const id = 'mem_' + Date.now().toString(36);
-  const c = M.AVATAR_COLORS[avatar] || '#0D9488';
+  const c = M.AVATAR_COLORS[avatar] || '#3B82F6';
   const newMem = {
     id,
     avatar,
     n: { ar: name, en: name },
     i: { ar: name[0], en: name[0].toUpperCase() },
     c,
-    role: { ar: role, en: role }
+    role: { ar: 'العائلة', en: 'Family' }
   };
   M.s.members = [...M.MEMBERS, newMem];
   if (M.api) {
@@ -326,6 +358,7 @@ M.saveSalaryEdit = f => {
   M.toast(`${M.ico('checkc', 16, 2)} ${M.t('salaryUpdated')}: ${M.fmt(v)} ${M.t('cur')}`);
 };
 
+/* Simplified, Clean Profile Sheet + Inline Edit Name & Color (No Role Clutter) */
 M.acts.member = el => {
   const ar = M.s.lang === 'ar';
   const m = M.member(el.dataset.id), list = (M.s.purchases || []).filter(p => p.member === m.id);
@@ -333,18 +366,65 @@ M.acts.member = el => {
   M.sheet.open(M.L(m.n), `
     <div class="sheet-profile">
       ${M.avatar(m.id, 'lg ring')}
-      <div style="flex:1">
-        <div class="muted small">${M.L(m.role)}</div>
-        <div style="font-size:22px;font-weight:800;margin:2px 0" class="priv">${M.money(total)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px">
+          <b style="font-size:15px">${M.L(m.n)}</b>
+          <button type="button" class="inline-edit-btn" data-act="edit-member-open" data-id="${m.id}" title="${ar ? 'تعديل الحساب' : 'Edit Profile'}">${M.ico('pen', 12, 2)}</button>
+        </div>
+        <div style="font-size:21px;font-weight:800;margin:4px 0 2px" class="priv">${M.money(total)}</div>
         <div class="muted small">${M.t('spentBy')} · ${list.length} ${M.t('purchases')}</div>
       </div>
       <button type="button" class="btn sm tonal" data-act="family-invite">${M.ico('share', 14, 2)} <span>${ar ? 'كود العائلة' : 'Invite'}</span></button>
     </div>
     <div class="group">${list.map(M.purchaseRow).join('') || `<div class="empty">${M.illu('cart')}<p>${ar ? 'لا توجد مشتريات مسجلة لهذا الفرد بعد' : 'No purchases recorded yet'}</p></div>`}</div>
     <div style="display:flex;gap:8px;margin-top:4px">
-      <button type="button" class="btn tonal" data-act="edit-salary" style="flex:1">${M.ico('pen', 15, 2)} <span>${M.t('editSalary')}</span></button>
-      <button type="button" class="btn tonal" data-act="reopen-onboarding" style="flex:1">${M.ico('users', 15, 2)} <span>${ar ? 'الإعداد الأولي' : 'Initial Setup'}</span></button>
+      <button type="button" class="btn tonal" data-act="edit-member-open" data-id="${m.id}" style="flex:1">${M.ico('user', 15, 2)} <span>${ar ? 'تعديل البروفايل' : 'Edit Profile'}</span></button>
+      <button type="button" class="btn tonal" data-act="edit-salary" style="flex:1">${M.ico('wallet', 15, 2)} <span>${M.t('editSalary')}</span></button>
     </div>`);
+};
+
+M.acts['edit-member-open'] = el => {
+  const ar = M.s.lang === 'ar';
+  const m = M.member(el.dataset.id || M.s.currentMemberId);
+  M.sheet.open(ar ? 'تعديل البروفايل' : 'Edit Profile', `
+    <form class="manual-form" data-form="edit-member" data-id="${m.id}">
+      <label>${ar ? 'الاسم' : 'Name'}
+        <input name="mname" required value="${M.L(m.n)}" autocomplete="off">
+      </label>
+      <label>${ar ? 'لون أيقونة البروفايل' : 'Profile Badge Color'}
+        <div class="av-grid">
+          ${[['abu', ar ? 'زمردي' : 'Teal'], ['umm', ar ? 'أزرق' : 'Blue'], ['khalid', ar ? 'بنفسجي' : 'Purple'], ['sara', ar ? 'ذهبي' : 'Amber']].map(([avKey, lbl]) => `
+            <div class="av-pick ${(m.avatar || m.id) === avKey ? 'on' : ''}" data-act="pick-av" data-v="${avKey}">
+              <span class="av has-char">${M.CHARS[avKey]}</span>
+              <span>${lbl}</span>
+            </div>
+          `).join('')}
+        </div>
+        <input type="hidden" name="avatar" value="${m.avatar || 'abu'}">
+      </label>
+      <button class="btn" type="submit">${M.ico('check', 18, 2.5)} <span>${M.t('save')}</span></button>
+    </form>
+  `);
+};
+
+M.saveEditMember = f => {
+  const ar = M.s.lang === 'ar';
+  const m = M.member(f.dataset.id);
+  if (!m) return;
+  const name = (f.mname?.value || '').trim();
+  const avatar = f.avatar?.value || m.avatar || 'abu';
+  if (!name) return;
+  m.n = { ar: name, en: name };
+  m.i = { ar: name[0], en: name[0].toUpperCase() };
+  m.avatar = avatar;
+  m.c = M.AVATAR_COLORS[avatar] || '#0D9488';
+  if (M.api) {
+    M.api.saveLocal(M.s);
+    M.api.updateConfig({ members: M.s.members }).catch(() => {});
+  }
+  M.sheet.close();
+  M.render();
+  M.toast(`${M.ico('checkc', 16)} ${ar ? 'تم تحديث البروفايل' : 'Profile updated'}`);
 };
 
 M.acts['reopen-onboarding'] = () => {
@@ -377,6 +457,10 @@ M.acts.receipt = el => {
 
 M.acts['purch-del'] = el => {
   const id = el.dataset.id;
+  const delItem = (M.s.purchases || []).find(p => p.id == id);
+  if (delItem && delItem.cat === 'car' && M.s.car) {
+    M.s.car.fuelUsed = Math.max(0, (Number(M.s.car.fuelUsed) || 0) - Number(delItem.amount || 0));
+  }
   M.s.purchases = (M.s.purchases || []).filter(p => p.id != id);
   if (M.api) {
     M.api.saveLocal(M.s);

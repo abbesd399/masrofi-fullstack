@@ -1,5 +1,5 @@
 /**
- * Scanner AI Service: Extract & Auto-Route Receipts and Utility/Car Bills
+ * Scanner AI Service: Extract & Auto-Route Receipts and Utility/Car Bills + AI Price-Hike Detection Over Time
  * Supports:
  *   1. Official Free Google Gemini Vision API (gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash)
  *   2. Official Free Groq Vision API (meta-llama/llama-4-scout-17b-16e-instruct)
@@ -90,7 +90,7 @@ function parseMultipartBuffer(buffer, boundary) {
 
 /**
  * Call free AI Vision / LLM API (Gemini 2.5 Flash / Gemini 2.0 Flash / Groq / OpenRouter) when configured
- * and an image or OCR text is provided. Never throws: falls back to local parser on any error.
+ * and an image or OCR text is provided. Also compares prices against priceHistory to detect price hikes over time!
  */
 async function analyzeWithFreeAI(body, aiCfg) {
   if (!aiCfg || !aiCfg.aiConfigured || !aiCfg.aiApiKey) return null;
@@ -99,8 +99,11 @@ async function analyzeWithFreeAI(body, aiCfg) {
   if (!hasRealImage && !hasText) return null;
 
   const mode = body.mode || 'receipt';
-  const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English receipt and bill OCR parser.
-Read the exact text, numbers, store/biller name, total amount, date, and line items written on the provided ${mode === 'bill' ? 'utility/car bill' : 'purchase receipt'} and return ONLY a valid JSON object with no markdown fences:
+  const priceHistory = Array.isArray(body.priceHistory) && body.priceHistory.length
+    ? `\nHistorical family prices for comparison: ${JSON.stringify(body.priceHistory)}. If any item or bill on this paper has a higher price than its historical lastPrice, include it in "detectedHikes": [{"n":{"ar":"اسم الصنف","en":"Item name"},"was":100,"now":130}].`
+    : '';
+  const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English receipt and bill OCR parser and price-hike detector.
+Read the exact text, numbers, store/biller name, total amount, date, and line items written on the provided ${mode === 'bill' ? 'utility/car bill' : 'purchase receipt'} and return ONLY a valid JSON object with no markdown fences:${priceHistory}
 If mode is "receipt":
 {
   "mode": "receipt",
@@ -108,7 +111,8 @@ If mode is "receipt":
   "cat": "groceries" | "car" | "utilities" | "home" | "family" | "dining" | "health" | "net",
   "amount": 3450,
   "day": 10,
-  "items": [{ "n": { "ar": "اسم الصنف من الورقة", "en": "Item name" }, "q": 1, "p": 3450 }]
+  "items": [{ "n": { "ar": "اسم الصنف من الورقة", "en": "Item name" }, "q": 1, "p": 3450 }],
+  "detectedHikes": []
 }
 If mode is "bill":
 {
@@ -120,7 +124,8 @@ If mode is "bill":
   "amount": 7200,
   "dueDay": 18,
   "isCurrentMonth": true,
-  "dueText": { "ar": "18 نوفمبر 2026", "en": "Nov 18, 2026" }
+  "dueText": { "ar": "18 نوفمبر 2026", "en": "Nov 18, 2026" },
+  "detectedHikes": []
 }`;
 
   try {
@@ -287,6 +292,7 @@ function parseScanRequest(body) {
         cat: body.cat || samp.cat,
         isCurrentMonth: body.isCurrentMonth !== undefined ? Boolean(body.isCurrentMonth) : samp.isCurrentMonth,
         targetId: body.targetId || samp.targetId,
+        detectedHikes: Array.isArray(body.detectedHikes) ? body.detectedHikes : [],
         autoDest: (body.isCurrentMonth !== undefined ? Boolean(body.isCurrentMonth) : samp.isCurrentMonth) ? 'month' : 'sched'
       }
     };
@@ -348,6 +354,7 @@ function parseScanRequest(body) {
       amount,
       cat,
       items,
+      detectedHikes: Array.isArray(body.detectedHikes) ? body.detectedHikes : [],
       day: extractedDay,
       date: extractedDate,
       time: body.time || '6:52 PM',

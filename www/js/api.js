@@ -176,7 +176,6 @@ M.api = {
       const cfgMap = {};
       for (const r of cfgRows) cfgMap[r.key] = r.val;
 
-      // Sync shared family AI key from Supabase config if stored there
       if (cfgMap.ai_config && cfgMap.ai_config.aiApiKey) {
         const sharedKey = this._decodeKey(cfgMap.ai_config.aiApiKey);
         if (sharedKey) {
@@ -188,8 +187,6 @@ M.api = {
         }
       }
 
-      // Guardrail: If Supabase has not been onboarded yet by a real family (only contains old demo seed),
-      // do NOT overwrite a real user's clean state unless forcePull is true or in automated test mode.
       const isTestEnv = typeof window !== 'undefined' && (window.__MASROFI_TEST_MODE__ || window.location.port === '3088' || window.location.port === '3099');
       if (!cfgMap.onboarded && !forcePull && !isTestEnv) {
         return null;
@@ -235,7 +232,15 @@ M.api = {
         monthDays: Number(cfgMap.monthDays ?? 30),
         scanCount: Number(cfgMap.scanCount ?? 0),
         bannerHidden: Boolean(cfgMap.bannerHidden),
-        car: cfgMap.car || M.s?.car,
+        car: (() => {
+          const c = Object.assign({ n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '', odo: 0, oilInterval: 7000, nextOil: 7000, kmDay: 45, fuelUsed: 0 }, cfgMap.car || M.s?.car || {});
+          c.oilInterval = 7000;
+          const odo = Math.max(0, Number(c.odo) || 0);
+          if (odo < 7000 || Number(c.nextOil) === 10000 || (Number(c.nextOil) - odo) > 7000) {
+            c.nextOil = odo < 7000 ? 7000 : (Math.floor(odo / 7000) * 7000 + 7000);
+          }
+          return c;
+        })(),
         goal: cfgMap.goal || M.s?.goal,
         hikes: Array.isArray(cfgMap.hikes) ? cfgMap.hikes : (M.s?.hikes || []),
         dups: Array.isArray(cfgMap.dups) ? cfgMap.dups : (M.s?.dups || []),
@@ -563,23 +568,34 @@ M.api = {
       const data = this._getItem(this.storageKey);
       if (!data) return null;
       const sanitized = typeof M.toWesternDigits === 'function' ? M.toWesternDigits(data) : data;
-      return JSON.parse(sanitized);
+      const parsed = JSON.parse(sanitized);
+      if (parsed && parsed.car) {
+        parsed.car.oilInterval = 7000;
+        const odo = Math.max(0, Number(parsed.car.odo) || 0);
+        if (odo < 7000 || Number(parsed.car.nextOil) === 10000) {
+          parsed.car.nextOil = 7000;
+        }
+      }
+      return parsed;
     } catch {
       return null;
     }
   },
 
-  /* ── Direct Client-Side Free AI Vision Call (works on standalone iOS .ipa & Android .apk) ── */
-  async analyzeImageDirectAI(mode, imageDataUrl) {
+  /* ── Direct Client-Side Free AI Vision Call + AI Price-Hike Comparison Over Time ── */
+  async analyzeImageDirectAI(mode, imageDataUrl, priceHistory = []) {
     const cfg = this.getIntegrations();
     if (!cfg.aiApiKey || !imageDataUrl) return null;
-    const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English receipt and bill OCR parser.
-Read the exact text, numbers, store/biller name, total amount, date, and line items written on this photographed paper (${mode === 'bill' ? 'utility/service bill' : 'purchase receipt/invoice'}).
+    const historyCtx = Array.isArray(priceHistory) && priceHistory.length
+      ? `\nPreviously recorded family item/bill prices for price-hike comparison over time: ${JSON.stringify(priceHistory)}.\nCompare the extracted item prices (or bill amount) against these historical prices. If any item/bill on the paper is more expensive than its historical lastPrice, include it in "detectedHikes": [{"n":{"ar":"اسم الصنف","en":"Item name"},"was":120,"now":150}].`
+      : '';
+    const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English receipt and bill OCR parser and price-hike detector.
+Read the exact text, numbers, store/biller name, total amount, date, and line items written on this photographed paper (${mode === 'bill' ? 'utility/service bill' : 'purchase receipt/invoice'}).${historyCtx}
 Do NOT invent fake stores. Read what is actually written on the paper and return ONLY a valid JSON object:
 If mode is "receipt":
-{"mode":"receipt","merchant":{"ar":"اسم المتجر أو الجهة المكتوبة في الورقة","en":"Store/Issuer name from paper"},"cat":"groceries"|"car"|"utilities"|"home"|"family"|"dining"|"health"|"net","amount":1250,"day":14,"items":[{"n":{"ar":"اسم الصنف من الورقة","en":"Item name"},"q":1,"p":1250}]}
+{"mode":"receipt","merchant":{"ar":"اسم المتجر أو الجهة المكتوبة في الورقة","en":"Store/Issuer name from paper"},"cat":"groceries"|"car"|"utilities"|"home"|"family"|"dining"|"health"|"net","amount":1250,"day":14,"items":[{"n":{"ar":"اسم الصنف من الورقة","en":"Item name"},"q":1,"p":1250}],"detectedHikes":[{"n":{"ar":"اسم الصنف","en":"Item name"},"was":1000,"now":1250}]}
 If mode is "bill":
-{"mode":"bill","targetId":"custom","kind":"var"|"fixed","cat":"utilities"|"car"|"net"|"family","biller":{"ar":"اسم الجهة في الفاتورة","en":"Biller name from paper"},"amount":3200,"dueDay":18,"isCurrentMonth":true,"dueText":{"ar":"تاريخ الاستحقاق من الورقة","en":"Due date from paper"}}`;
+{"mode":"bill","targetId":"custom","kind":"var"|"fixed","cat":"utilities"|"car"|"net"|"family","biller":{"ar":"اسم الجهة في الفاتورة","en":"Biller name from paper"},"amount":3200,"dueDay":18,"isCurrentMonth":true,"dueText":{"ar":"تاريخ الاستحقاق من الورقة","en":"Due date from paper"},"detectedHikes":[]}`;
 
     try {
       if (cfg.aiProvider === 'gemini') {
@@ -735,7 +751,7 @@ If mode is "bill":
 
   async analyzeScan(payload) {
     if (payload && payload.image) {
-      const directFirst = await this.analyzeImageDirectAI(payload.mode, payload.image);
+      const directFirst = await this.analyzeImageDirectAI(payload.mode, payload.image, payload.priceHistory);
       if (directFirst) {
         return { success: true, aiUsed: true, mode: payload.mode, extracted: directFirst };
       }

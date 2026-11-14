@@ -1,4 +1,4 @@
-/* Masrofi — Native App Controller + Registration/Onboarding + Permissions + Family Code & Live Sync */
+/* Masrofi — Native App Controller + Simplified Registration + Built-In AI Monthly Alerts (7,000 km Oil Cycle) */
 M.s = Object.assign(M.seed(), { os: 'ios', theme: 'light', lang: 'ar', tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false });
 M.TABS = [['home', 'home'], ['bills', 'receipt'], ['family', 'users'], ['insights', 'spark']];
 
@@ -9,7 +9,6 @@ M.onb = {
   camPerm: false,
   notifPerm: false,
   userName: '',
-  userRole: '',
   familyName: '',
   joinCode: ''
 };
@@ -26,13 +25,14 @@ M.statusbarHtml = () => {
 M.appbarHtml = () => {
   const s = M.s, ar = s.lang === 'ar';
   const curUser = M.currentUser();
-  const helloTxt = s.onboarded && curUser ? `${ar ? 'أهلاً، ' : 'Hello, '}${M.L(curUser.n)} 👋` : M.t('hello');
+  const helloTxt = s.onboarded && curUser ? `${ar ? 'أهلاً، ' : 'Hello, '}${M.L(curUser.n)}` : M.t('hello');
   const famLabel = s.familyName ? M.L(s.familyName) : M.t('november');
   const titles = { home: helloTxt, bills: M.t('billsT'), family: M.t('familyT'), insights: M.t('insightsT') };
   const unpaid = (s.bills || []).filter(b => !b.paid).length;
+  const oilDue = M.getCarOilStatus ? M.getCarOilStatus().dueThisMonth : false;
   const curId = curUser?.id || 'abu';
   return `<div class="ab-title">${s.tab === 'home' ? `<div class="ab-sub">${famLabel} · ${M.t('november')}</div>` : ''}<h2 style="${s.tab === 'home' ? 'font-size:18px;line-height:1.3;white-space:nowrap' : ''}">${titles[s.tab]}</h2></div>
-    <button type="button" class="icon-btn" data-act="bell" id="bell" aria-label="alerts">${M.ico('bell', 20)}${unpaid ? '<span class="dot"></span>' : ''}</button>
+    <button type="button" class="icon-btn" data-act="bell" id="bell" aria-label="alerts">${M.ico('bell', 20)}${(unpaid || oilDue) ? '<span class="dot"></span>' : ''}</button>
     ${s.tab === 'home' ? M.avatar(curId, 'ring', `style="width:40px;height:40px;cursor:pointer" data-act="member" data-id="${curId}"`) : ''}`;
 };
 
@@ -40,6 +40,15 @@ M.navHtml = () => {
   const items = M.TABS.map(([k, ico], i) => `<button type="button" class="nav-item ${M.s.tab === k ? 'on' : ''}" data-act="tab" data-id="${k}"><span class="ni-ico">${M.ico(ico, M.s.os === 'ios' ? 23 : 22, M.s.tab === k ? 2.15 : 1.75)}</span>${M.t('nav')[i]}</button>`);
   items.splice(2, 0, `<button type="button" class="nav-scan" data-act="open-scan" aria-label="scan"><span>${M.ico('camera', 24, 2)}</span></button>`);
   return items.join('');
+};
+
+/* ── Proactive AI Monthly Push Notification (7,000 km Oil Change + Monthly Bills) ── */
+M.triggerMonthlyAINotification = () => {
+  if (!M.getMonthlyAIAlert) return;
+  const info = M.getMonthlyAIAlert();
+  M.notify(info.title, info.body, () => {
+    if (M.acts && M.acts['banner-open']) M.acts['banner-open']();
+  });
 };
 
 /* ── Native Onboarding & Registration Wizard (#onboarding) ── */
@@ -62,9 +71,8 @@ M.openOnboarding = (step = 1) => {
   if (M.s.onboarded) {
     const u = M.currentUser();
     M.onb.userName = M.L(u.n);
-    M.onb.userRole = M.L(u.role);
     M.onb.avatar = u.avatar || 'abu';
-    M.onb.familyName = M.L(M.s.familyName || { ar: 'عائلتنا', en: 'Our Family' });
+    M.onb.familyName = M.L(M.s.familyName || { ar: 'محفظة العائلة', en: 'Family Wallet' });
   }
   M.checkPermissionsState().then(() => M.renderOnboarding());
   box.classList.add('on');
@@ -80,7 +88,6 @@ M.renderOnboarding = () => {
   if (!box) return;
   const ar = M.s.lang === 'ar';
   const st = M.onb.step || 1;
-  const hasAiKey = Boolean(M.api?.getIntegrations()?.aiApiKey);
 
   let stepHtml = '';
   if (st === 1) {
@@ -88,7 +95,7 @@ M.renderOnboarding = () => {
       <div class="onb-card">
         <div class="onb-sec-t">${M.ico('shield', 16)} <span>${ar ? 'الخطوة 1 من 3 · تراخيص التطبيق الأصلي' : 'Step 1 of 3 · Native App Permissions'}</span></div>
         <p style="margin:0;font-size:12.5px;color:var(--muted);line-height:1.5">
-          ${ar ? 'يحتاج تطبيق مصروفي إلى صلاحية الكاميرا لفتح الماسح الضوئي مباشرة داخل التطبيق، وصلاحية التنبيهات لتذكيرك بمواعيد الفواتير ومشتريات العائلة لحظياً.' : 'Masrofi needs camera access to scan receipts directly inside the app, and notifications for real-time family alerts.'}
+          ${ar ? 'يحتاج تطبيق مصروفي إلى صلاحية الكاميرا لفتح الماسح الضوئي مباشرة داخل التطبيق، وصلاحية التنبيهات ليرسل لك الذكاء الاصطناعي تذكير الشهر وموعد تغيير زيت السيارة (كل 7,000 كم).' : 'Masrofi needs camera access to scan receipts directly inside the app, and notifications for monthly AI reminders and 7,000 km oil change alerts.'}
         </p>
 
         <div class="perm-item">
@@ -105,8 +112,8 @@ M.renderOnboarding = () => {
         <div class="perm-item">
           <div class="perm-ico">${M.ico('bell', 21)}</div>
           <div class="perm-txt">
-            <b>${ar ? 'الإشعارات والتنبيهات الفورية' : 'Instant Push Alerts'}</b>
-            <span>${ar ? 'تنبيه عند اقتراب الفواتير أو تسجيل مشتريات جديدة من أفراد العائلة' : 'Alerts for upcoming bills and family purchases'}</span>
+            <b>${ar ? 'تنبيهات الذكاء الاصطناعي الشهرية' : 'Monthly AI Push Alerts'}</b>
+            <span>${ar ? 'تنبيه شهري بموعد تغيير زيت السيارة (كل 7,000 كم) والفواتير ومشتريات العائلة' : 'Monthly AI alerts for 7,000 km oil changes, bills, and family purchases'}</span>
           </div>
           <button type="button" class="perm-btn ${M.onb.notifPerm ? 'ok' : ''}" data-act="onb-perm-notif">
             ${M.onb.notifPerm ? (ar ? '✓ مفعّل' : '✓ Granted') : (ar ? 'تفعيل' : 'Allow')}
@@ -129,24 +136,21 @@ M.renderOnboarding = () => {
         </div>
 
         <form class="manual-form" data-form="onb-step2">
-          <label>${ar ? 'اسمك الشخصي (كما يظهر للعائلة)' : 'Your Name'}
-            <input name="userName" required placeholder="${ar ? 'مثال: عباس / أبو خالد' : 'e.g. Abbes / Abu Khalid'}" value="${M.onb.userName || ''}" autocomplete="off">
+          <label>${ar ? 'اسمك الشخصي' : 'Your Name'}
+            <input name="userName" id="obUserName" required placeholder="${ar ? 'مثال: عباس' : 'e.g. Abbes'}" value="${M.onb.userName || ''}" autocomplete="off">
           </label>
-          <label>${ar ? 'صفتك في العائلة' : 'Your Family Role'}
-            <input name="userRole" placeholder="${ar ? 'مثال: رب الأسرة · مدير المحفظة' : 'e.g. Family Admin'}" value="${M.onb.userRole || (ar ? 'مدير المحفظة' : 'Wallet Admin')}" autocomplete="off">
-          </label>
-          <label>${ar ? 'اختر صورتك الرمزية' : 'Choose Your Avatar'}
+          <label>${ar ? 'لون أيقونة البروفايل' : 'Profile Badge Color'}
             <div class="av-grid">
-              ${[['abu', ar ? 'أب / شاب' : 'Dad'], ['umm', ar ? 'أم / سيدة' : 'Mom'], ['khalid', ar ? 'ابن' : 'Son'], ['sara', ar ? 'ابنة' : 'Daughter']].map(([k, lbl]) => `
+              ${[['abu', ar ? 'زمردي' : 'Teal'], ['umm', ar ? 'أزرق' : 'Blue'], ['khalid', ar ? 'بنفسجي' : 'Purple'], ['sara', ar ? 'ذهبي' : 'Amber']].map(([k, lbl]) => `
                 <button type="button" class="av-opt ${M.onb.avatar === k ? 'on' : ''}" data-act="onb-avatar" data-v="${k}">
-                  <div class="av has-char" style="width:38px;height:38px">${M.charSvg(k)}</div>
+                  <div class="av has-char" style="width:36px;height:36px">${M.CHARS[k]}</div>
                   <span>${lbl}</span>
                 </button>`).join('')}
             </div>
           </label>
           ${!isJoin ? `
             <label>${ar ? 'اسم محفظة العائلة' : 'Family Wallet Name'}
-              <input name="familyName" required placeholder="${ar ? 'مثال: عائلة عباس' : 'e.g. Abbes Family'}" value="${M.onb.familyName || (ar ? 'محفظة العائلة' : 'Family Wallet')}" autocomplete="off">
+              <input name="familyName" required placeholder="${ar ? 'مثال: محفظة العائلة' : 'e.g. Family Wallet'}" value="${M.onb.familyName || (ar ? 'محفظة العائلة' : 'Family Wallet')}" autocomplete="off">
             </label>
           ` : `
             <label>${ar ? 'كود دعوة العائلة (MSR-XXXX)' : 'Family Invite Code (MSR-XXXX)'}
@@ -155,52 +159,46 @@ M.renderOnboarding = () => {
           `}
           <div style="display:grid;grid-template-columns:auto 1fr;gap:8px;margin-top:4px">
             <button type="button" class="btn ghost" style="width:auto;padding:0 16px" data-act="onb-prev" data-step="1">${ar ? 'السابق' : 'Back'}</button>
-            <button type="submit" class="btn">${isJoin ? (ar ? 'انضمام ومزامنة العائلة الآن' : 'Join Family Now') : (ar ? 'متابعة لإدخال الراتب والبيانات' : 'Next: Financial Setup')}</button>
+            <button type="submit" class="btn" data-act="ob-step2-next">${isJoin ? (ar ? 'انضمام ومزامنة العائلة الآن' : 'Join Family Now') : (ar ? 'متابعة لإدخال الراتب' : 'Next: Salary Setup')}</button>
           </div>
         </form>
       </div>`;
   } else {
     const salVal = M.s.salary > 0 ? M.s.salary : '';
     const carName = M.s.car?.n ? M.L(M.s.car.n) : '';
-    const goalTarget = M.s.goal?.target || 100000;
+    const odoVal = M.s.car?.odo > 0 ? M.s.car.odo : '';
     stepHtml = `
       <div class="onb-card">
-        <div class="onb-sec-t">${M.ico('wallet', 16)} <span>${ar ? 'الخطوة 3 من 3 · الراتب والبيانات الأولية' : 'Step 3 of 3 · Salary & Initial Setup'}</span></div>
-        <form class="manual-form" data-form="onb-step3">
+        <div class="onb-sec-t">${M.ico('wallet', 16)} <span>${ar ? 'الخطوة 3 من 3 · الراتب وبيانات السيارة' : 'Step 3 of 3 · Salary & Car Setup'}</span></div>
+        <form class="manual-form" id="obFinishForm" data-form="onb-step3">
           <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:8px">
             <label>${ar ? 'الراتب أو الميزانية الشهرية (' + M.t('cur') + ')' : 'Monthly Salary / Budget (' + M.t('cur') + ')'}
-              <input name="salary" type="text" inputmode="decimal" required placeholder="120000" value="${salVal}">
+              <input name="salary" id="obSalary" type="text" inputmode="decimal" required placeholder="120000" value="${salVal}">
             </label>
             <label>${ar ? 'يوم نزول الراتب بالشهر' : 'Payday (1-30)'}
               <input name="payday" type="text" inputmode="numeric" required placeholder="1" value="${M.s.payday || 1}">
             </label>
           </div>
 
-          <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:8px">
+          <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:8px">
             <label>${ar ? 'اسم السيارة (اختياري)' : 'Car Make/Model (Optional)'}
               <input name="carName" placeholder="${ar ? 'مثال: رونو سامبول' : 'e.g. Renault Symbol'}" value="${carName === 'سيارة العائلة' ? '' : carName}" autocomplete="off">
             </label>
-            <label>${ar ? 'ميزانية الوقود الشهرية' : 'Monthly Fuel Budget'}
-              <input name="fuelBudget" type="text" inputmode="decimal" placeholder="5000" value="${M.s.car?.fuelBudget || 5000}">
+            <label>${ar ? 'العداد الحالي بالكم (اختياري)' : 'Current Odometer km (Optional)'}
+              <input name="carOdo" type="text" inputmode="numeric" placeholder="${ar ? 'مثال: 68000' : 'e.g. 68000'}" value="${odoVal}">
             </label>
           </div>
 
-          <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:8px">
-            <label>${ar ? 'اسم هدف التوفير (اختياري)' : 'Savings Goal Title'}
-              <input name="goalName" placeholder="${ar ? 'مثال: صندوق الطوارئ / العطلة' : 'e.g. Emergency / Vacation'}" value="${M.s.goal?.name ? M.L(M.s.goal.name) : ''}" autocomplete="off">
-            </label>
-            <label>${ar ? 'المبلغ المستهدف (' + M.t('cur') + ')' : 'Target Amount'}
-              <input name="goalTarget" type="text" inputmode="decimal" placeholder="100000" value="${goalTarget}">
-            </label>
+          <div class="ai-pill" style="padding:10px 12px;border-radius:14px;background:var(--surface-2)">
+            <span class="spark">${M.ico('spark', 15, 2)}</span>
+            <span style="font-size:11.5px;color:var(--muted);line-height:1.45">
+              ${ar ? 'مفتاح الذكاء الاصطناعي مدمج داخل نظام التطبيق، وسيقوم بتذكيرك تلقائياً كل شهر بموعد تغيير زيت السيارة (كل 7,000 كم) ورصد أي زيادة في الأسعار.' : 'AI is built into the app and automatically sends monthly alerts for your 7,000 km oil change and price hikes.'}
+            </span>
           </div>
-
-          <label>${ar ? 'مفتاح الذكاء الاصطناعي المجاني للعائلة (Gemini AI Key - اختياري)' : 'Shared Family Gemini AI Key (Optional)'}
-            <input name="aiKey" type="text" placeholder="${hasAiKey ? (ar ? '✓ مفتاح الذكاء الاصطناعي مربوط وجاهز' : '✓ AI Key already configured') : 'AIzaSy...'}" value="${M.api?.getIntegrations()?.aiApiKey || ''}" style="direction:ltr" autocomplete="off">
-          </label>
 
           <div style="display:grid;grid-template-columns:auto 1fr;gap:8px;margin-top:4px">
             <button type="button" class="btn ghost" style="width:auto;padding:0 16px" data-act="onb-prev" data-step="2">${ar ? 'السابق' : 'Back'}</button>
-            <button type="submit" class="btn">${M.ico('check', 18, 2.5)} <span>${ar ? 'بدء استخدام تطبيق مصروفي' : 'Start Masrofi App'}</span></button>
+            <button type="submit" class="btn">${M.ico('check', 18, 2.5)} <span>${ar ? 'بدء استخدام مصروفي' : 'Start Masrofi'}</span></button>
           </div>
         </form>
       </div>`;
@@ -250,7 +248,7 @@ M.acts['onb-perm-notif'] = async () => {
     }
   } catch {}
   M.onb.notifPerm = true;
-  M.toast(ar ? '✓ تم تفعيل الإشعارات والتنبيهات الفورية' : '✓ Notifications enabled');
+  M.toast(ar ? '✓ تم تفعيل تنبيهات الذكاء الاصطناعي الشهرية' : '✓ Monthly AI notifications enabled');
   M.renderOnboarding();
 };
 
@@ -258,19 +256,22 @@ M.acts['onb-next'] = el => {
   M.onb.step = +(el.dataset.step || 2);
   M.renderOnboarding();
 };
+M.acts['ob-next'] = el => M.acts['onb-next'](el);
 M.acts['onb-prev'] = el => {
   M.onb.step = +(el.dataset.step || 1);
   M.renderOnboarding();
 };
 M.acts['onb-mode'] = el => {
-  M.onb.mode = el.dataset.v || 'create';
+  const nextMode = el.dataset.v || 'create';
+  M.onb.mode = nextMode;
+  if (nextMode === 'join' && M.onb.avatar === 'abu') M.onb.avatar = 'umm';
+  if (nextMode === 'create' && M.onb.avatar === 'umm') M.onb.avatar = 'abu';
   M.renderOnboarding();
 };
 M.acts['onb-avatar'] = el => {
   const form = el.closest('form');
   if (form) {
     if (form.userName) M.onb.userName = form.userName.value;
-    if (form.userRole) M.onb.userRole = form.userRole.value;
     if (form.familyName) M.onb.familyName = form.familyName.value;
     if (form.joinCode) M.onb.joinCode = form.joinCode.value;
   }
@@ -281,10 +282,8 @@ M.acts['onb-avatar'] = el => {
 M.handleOnbStep2 = async f => {
   const ar = M.s.lang === 'ar';
   const name = (f.userName?.value || '').trim();
-  const role = (f.userRole?.value || '').trim() || (ar ? 'فرد من العائلة' : 'Family Member');
   if (!name) return;
   M.onb.userName = name;
-  M.onb.userRole = role;
 
   if (M.onb.mode === 'join') {
     const code = (f.joinCode?.value || '').trim().toUpperCase();
@@ -304,8 +303,8 @@ M.handleOnbStep2 = async f => {
       avatar: av,
       n: { ar: name, en: name },
       i: { ar: name.charAt(0), en: name.charAt(0).toUpperCase() },
-      c: M.AVATAR_COLORS[av] || '#EC4899',
-      role: { ar: role, en: role }
+      c: M.AVATAR_COLORS[av] || '#3B82F6',
+      role: { ar: 'العائلة', en: 'Family' }
     };
     if (!Array.isArray(M.s.members)) M.s.members = [];
     M.s.members.push(newMember);
@@ -335,14 +334,12 @@ M.handleOnbStep3 = async f => {
   }
   const payday = Math.max(1, Math.min(30, Number(M.toWesternDigits(String(f.payday?.value || '1'))) || 1));
   const carName = (f.carName?.value || '').trim() || (ar ? 'سيارة العائلة' : 'Family Car');
-  const fuelBudget = Number(M.toWesternDigits(String(f.fuelBudget?.value || '5000')).replace(/[^\d.]/g, '')) || 5000;
-  const goalName = (f.goalName?.value || '').trim() || (ar ? 'هدف التوفير العائلي' : 'Family Savings Goal');
-  const goalTarget = Number(M.toWesternDigits(String(f.goalTarget?.value || '100000')).replace(/[^\d.]/g, '')) || 100000;
-  const aiKey = (f.aiKey?.value || '').trim();
+  const odo = Math.max(0, parseInt(M.toWesternDigits(String(f.carOdo?.value || '0')).replace(/[^\d]/g, ''), 10) || 0);
+  const oilInterval = 7000;
+  const nextOil = odo + oilInterval;
 
   const av = M.onb.avatar || 'abu';
-  const uName = M.onb.userName || (ar ? 'صاحب المحفظة' : 'Wallet Owner');
-  const uRole = M.onb.userRole || (ar ? 'مدير المحفظة' : 'Wallet Admin');
+  const uName = M.onb.userName || (ar ? 'عباس' : 'Abbes');
   const famName = M.onb.familyName || (ar ? 'محفظة العائلة' : 'Family Wallet');
   const famCode = M.s.familyCode || M.genFamilyCode();
 
@@ -360,7 +357,7 @@ M.handleOnbStep3 = async f => {
         n: { ar: uName, en: uName },
         i: { ar: uName.charAt(0), en: uName.charAt(0).toUpperCase() },
         c: M.AVATAR_COLORS[av] || '#0D9488',
-        role: { ar: uRole, en: uRole }
+        role: { ar: 'العائلة', en: 'Family' }
       }
     ],
     salary: sal,
@@ -368,24 +365,19 @@ M.handleOnbStep3 = async f => {
     day: new Date().getDate() || 14,
     car: {
       n: { ar: carName, en: carName },
-      plate: M.s.car?.plate || '00000 123 16',
-      odo: M.s.car?.odo || 0,
-      nextOil: M.s.car?.nextOil || 10000,
-      kmDay: 40,
-      fuelBudget,
+      plate: M.s.car?.plate || '',
+      odo,
+      oilInterval,
+      lastOilOdo: odo,
+      nextOil,
+      kmDay: 45,
       fuelUsed: 0
     },
-    goal: {
-      name: { ar: goalName, en: goalName },
-      target: goalTarget,
-      saved: 0,
-      monthly: Math.round(goalTarget / 10)
-    }
+    goal: { name: { ar: '', en: '' }, target: 0, saved: 0, monthly: 0 }
   });
 
-  if (aiKey && M.api) {
-    await M.api.saveSharedAiKey(aiKey, 'gemini');
-  }
+  if (typeof M.syncCarOilItem === 'function') M.syncCarOilItem();
+
   if (M.api) {
     M.api.saveLocal(M.s);
     M.api.resetSupabaseToCleanFamily(M.s).catch(() => {});
@@ -393,11 +385,12 @@ M.handleOnbStep3 = async f => {
   }
   M.closeOnboarding();
   M.render(true);
-  M.toast(`${M.ico('checkc', 16)} ${ar ? 'تم إعداد محفظة العائلة بنجاح! كود العائلة: ' + famCode : 'Family wallet ready! Code: ' + famCode}`);
+  setTimeout(() => M.triggerMonthlyAINotification(), 650);
 };
 
 M.render = (animate = false) => {
   const s = M.s, scr = M.$('#screen'), ph = M.phone(), c = M.calc();
+  if (typeof M.syncCarOilItem === 'function') M.syncCarOilItem();
   ph.dataset.tab = s.tab;
   ph.dataset.state = c.state;
   M.$('#statusbar').innerHTML = M.statusbarHtml();
@@ -415,6 +408,7 @@ M.render = (animate = false) => {
     M._stagTm = setTimeout(() => scr.classList.remove('stagger'), 850);
   }
   if (s.tab === 'home') M.afterHome();
+  if (typeof M.scheduleBackgroundNotifications === 'function') M.scheduleBackgroundNotifications();
   if (s.tab === 'insights') M.animateRings(scr);
 };
 
@@ -456,6 +450,10 @@ M.acts['close-sheet'] = () => {
   else if (M.s.tab === 'insights') M.render();
 };
 M.acts.bell = el => { M.replayAnim(el.querySelector('.ic'), 'wiggle', 820); setTimeout(() => M.acts['banner-open'](), 420); };
+M.acts['ai-month-notify'] = () => {
+  M.sheet.close();
+  M.triggerMonthlyAINotification();
+};
 
 /* ── live scenario simulators (Desktop Studio & Automated Tests) ── */
 M.SIM = {
@@ -466,8 +464,7 @@ M.SIM = {
       M.api.updateConfig({ bannerHidden: false }).catch(() => {});
     }
     if (M.s.tab !== 'home') M.go('home'); else M.render();
-    const unpaid = M.s.bills.filter(b => !b.paid);
-    M.notify(`${M.t('alertTitle')}`, M.t('alertBody')(unpaid.length, 15), () => M.acts['banner-open']());
+    M.triggerMonthlyAINotification();
     setTimeout(() => {
       M.replayAnim(M.$('#bell .ic'), 'wiggle', 820);
       const b = M.$('#banner');
@@ -529,9 +526,9 @@ const phone = M.phone();
 phone.addEventListener('click', ev => {
   const seg = ev.target.closest('[data-seg]');
   if (seg) {
-    const wrap = seg.parentElement, btns = [...wrap.querySelectorAll('button')], idx = btns.indexOf(seg);
     const key = seg.dataset.seg, nextV = seg.dataset.v;
     if (M.s[key] === nextV) return;
+    const wrap = seg.parentElement, btns = [...wrap.querySelectorAll('button')], idx = btns.indexOf(seg);
     btns.forEach(b => b.classList.toggle('on', b === seg));
     const thumb = wrap.querySelector('.thumb');
     if (thumb) thumb.style.insetInlineStart = `calc(3px + ${idx} * (100% - 6px) / ${btns.length})`;
@@ -588,8 +585,10 @@ phone.addEventListener('submit', ev => {
   if (f.dataset.form === 'add-purch') M.saveManualPurchase(f);
   if (f.dataset.form === 'manual') M.saveManual(f);
   if (f.dataset.form === 'add-member') M.saveAddMember(f);
+  if (f.dataset.form === 'edit-member') M.saveEditMember(f);
   if (f.dataset.form === 'join-code') M.saveJoinFamilyCode(f);
   if (f.dataset.form === 'car-edit') M.saveCarEdit(f);
+  if (f.dataset.form === 'fuel-add') M.saveFuelFillUp(f);
   if (f.dataset.form === 'goal-edit') M.saveGoalEdit(f);
   if (f.dataset.form === 'onb-step2') M.handleOnbStep2(f);
   if (f.dataset.form === 'onb-step3') M.handleOnbStep3(f);
@@ -715,6 +714,24 @@ M.$('#refs').innerHTML = [
   ['Haikei', 'layered SVG waves + blob in hero'], ['Super Designer', 'multi-node mesh gradient hero'],
   ['MagicPattern', 'perspective grid + noise in scanner & AI header'], ['BGJar / SVGGenie / Undesign', 'SVG patterns on alert banner & car card'],
 ].map(([a, b]) => `<li><b>${a}</b> — ${b}</li>`).join('');
+
+
+/* Sync & schedule OS notifications when app goes to background / outside the app */
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && M.s?.onboarded) {
+      if (typeof M.scheduleBackgroundNotifications === 'function') {
+        M.scheduleBackgroundNotifications();
+      }
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'APP_BACKGROUNDED',
+          notifyOnExit: false
+        });
+      }
+    }
+  });
+}
 
 /* boot */
 M.s.lastState = M.calc().state;

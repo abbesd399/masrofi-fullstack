@@ -1,4 +1,4 @@
-/* Tab 3 — Family Shared Wallet: dynamic members + invite code · purchases feed | smart grocery cart */
+/* Tab 3 — Family Shared Wallet: dynamic members + invite code · purchases feed | smart grocery cart with Price-Hike Detection */
 
 M.feedListHtml = () => {
   const s = M.s, ar = s.lang === 'ar';
@@ -13,7 +13,7 @@ M.feedListHtml = () => {
 };
 
 M.familyBodyHtml = () => {
-  const s = M.s, seg = s.famSeg || 'feed';
+  const s = M.s, seg = s.famSeg || 'feed', ar = s.lang === 'ar';
   if (seg === 'feed') {
     return `
     <div style="display:flex;flex-direction:column;gap:14px">
@@ -32,7 +32,8 @@ M.familyBodyHtml = () => {
   const cartList = s.cart || [];
   const est = cartList.reduce((a, i) => a + i.p * i.q, 0);
   const left = cartList.filter(i => !i.got).reduce((a, i) => a + i.p * i.q, 0);
-  const gotCount = cartList.filter(i => i.got).length;
+  const gotItems = cartList.filter(i => i.got);
+  const gotCount = gotItems.length;
   const remCount = cartList.length - gotCount;
   const pct = c.spendable ? Math.min(100, Math.round((left / c.spendable) * 100)) : (left ? 100 : 0);
   const donePct = est ? Math.round(((est - left) / est) * 100) : 0;
@@ -41,7 +42,10 @@ M.familyBodyHtml = () => {
   <div class="cart-est">
     <div class="ce-top">
       <div class="small" style="opacity:.92;display:flex;gap:6px;align-items:center;font-weight:600">${M.ico('cart', 16, 2)} ${M.t('remBasket')}</div>
-      ${gotCount ? `<button type="button" class="ce-clear" data-act="cart-clear-got">${M.ico('trash', 13, 2)} ${M.t('clearGot')} (${gotCount})</button>` : `<span class="ce-pill">${remCount}/${cartList.length} ${M.t('items')}</span>`}
+      ${gotCount ? `<div style="display:flex;gap:5px">
+        <button type="button" class="ce-clear" data-act="cart-checkout-got" style="background:rgba(255,255,255,.28)">${M.ico('check', 13, 2.5)} ${ar ? 'خصم كمصروف' : 'Log Expense'}</button>
+        <button type="button" class="ce-clear" data-act="cart-clear-got">${M.ico('trash', 13, 2)} (${gotCount})</button>
+      </div>` : `<span class="ce-pill">${remCount}/${cartList.length} ${M.t('items')}</span>`}
     </div>
     <div class="ce-big priv" id="cartLeftBal">${M.money(left)}</div>
     <div class="ce-meta">
@@ -120,7 +124,7 @@ M.acts['add-purch-open'] = () => {
       </div>
       <input type="hidden" name="member" value="${defaultMid}">
     </label>
-    <label>${M.t('merchant')}<input name="m" required placeholder="${ar ? 'مثال: سوبرماركت الوفاء…' : 'e.g. Local market…'}" autocomplete="off"></label>
+    <label>${M.t('merchant')}<input name="m" required placeholder="${ar ? 'مثال: سوبرماركت الوفاء، حليب، بنزين…' : 'e.g. Local market, Milk, Fuel…'}" autocomplete="off"></label>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <label>${M.t('amount')} (${M.t('cur')})<input name="a" type="text" inputmode="decimal" required placeholder="1200"></label>
       <label>${M.t('category')}
@@ -141,17 +145,33 @@ M.acts['pick-mem'] = el => {
 };
 
 M.saveManualPurchase = f => {
+  const ar = M.s.lang === 'ar';
   const mid = f.member.value || M.s.currentMemberId || M.MEMBERS[0]?.id || 'abu';
   const mar = f.m.value.trim(), cat = f.cat.value || 'groceries';
   const rawA = typeof f.a.value === 'string' ? M.toWesternDigits(f.a.value) : f.a.value;
   const amount = parseFloat(rawA);
   if (!mar || !(amount > 0)) return;
   const id = Date.now();
+  const itemObj = { n: { ar: mar, en: mar }, q: 1, p: amount };
+
+  // Check if this item/merchant increased in price compared to history!
+  const hikesFound = M.findPriceHikesForEntry({
+    merchant: { ar: mar, en: mar },
+    amount,
+    items: [itemObj]
+  });
+  M.recordDetectedHikes(hikesFound);
+
   const newP = {
-    id, member: mid, merchant: { ar: mar, en: mar }, cat, amount, day: M.s.day, time: '7:15 PM', scanned: false,
-    items: [{ n: { ar: M.CATS[cat].n.ar, en: M.CATS[cat].n.en }, q: 1, p: amount }]
+    id, member: mid, merchant: { ar: mar, en: mar }, cat, amount, day: M.s.day,
+    time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    scanned: false,
+    items: [itemObj]
   };
   M.s.purchases.unshift(newP);
+  if (cat === 'car' && M.s.car) {
+    M.s.car.fuelUsed = (Number(M.s.car.fuelUsed) || 0) + amount;
+  }
   if (M.api) {
     M.api.saveLocal(M.s);
     M.api.addPurchase(newP).catch(() => {});
@@ -160,7 +180,12 @@ M.saveManualPurchase = f => {
   M.sheet.close();
   M.render();
   M.freshId = null;
-  M.toast(`${M.ico('checkc', 16, 2)} −${M.fmt(amount)} ${M.t('cur')} · ${mar}`);
+  if (hikesFound.length > 0) {
+    const h = hikesFound[0];
+    M.toast(`${M.ico('trend', 16)} ${ar ? `تنبيه: زاد سعر ${mar} (+${h.pct}%)` : `Price hike: ${mar} (+${h.pct}%)`}`, 'warn');
+  } else {
+    M.toast(`${M.ico('checkc', 16, 2)} −${M.fmt(amount)} ${M.t('cur')} · ${mar}`);
+  }
   M.checkThreshold();
 };
 
@@ -224,6 +249,41 @@ M.acts['cart-del'] = el => {
   M.toast(`${M.ico('trash', 15, 2)} ${M.t('itemRemoved')}`);
 };
 
+/* One-Tap Checkout of Checked Cart Items into Family Expenses */
+M.acts['cart-checkout-got'] = () => {
+  const ar = M.s.lang === 'ar';
+  const gotItems = (M.s.cart || []).filter(x => x.got);
+  if (!gotItems.length) return;
+  const total = gotItems.reduce((a, i) => a + i.p * i.q, 0);
+  const itemsPayload = gotItems.map(i => ({ n: i.n, q: i.q, p: i.p }));
+
+  // Check for price hikes across checked items
+  const hikesFound = M.findPriceHikesForEntry({ items: itemsPayload });
+  M.recordDetectedHikes(hikesFound);
+
+  const newP = {
+    id: Date.now(),
+    member: M.s.currentMemberId || M.MEMBERS[0]?.id || 'abu',
+    merchant: { ar: 'مقاضي البيت', en: 'Home Groceries' },
+    cat: 'groceries',
+    amount: total,
+    day: M.s.day,
+    time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    scanned: false,
+    items: itemsPayload
+  };
+  M.s.purchases.unshift(newP);
+  M.s.cart = (M.s.cart || []).filter(x => !x.got);
+  if (M.api) {
+    M.api.saveLocal(M.s);
+    M.api.addPurchase(newP).catch(() => {});
+    M.api.clearGotCart().catch(() => {});
+  }
+  M.refreshCartView();
+  M.checkThreshold();
+  M.toast(`${M.ico('checkc', 16)} ${ar ? `تم تسجيل المقاضي كمصروف (−${M.fmt(total)} ${M.t('cur')})` : `Logged groceries (−${M.fmt(total)} ${M.t('cur')})`}`);
+};
+
 M.acts['cart-clear-got'] = () => {
   M.s.cart = (M.s.cart || []).filter(x => !x.got);
   if (M.api) {
@@ -267,6 +327,9 @@ M.saveCartEdit = f => {
   const rawQ = typeof f.q.value === 'string' ? M.toWesternDigits(f.q.value) : f.q.value;
   const p = parseFloat(rawP), q = Math.max(1, parseInt(rawQ, 10) || 1);
   if (!n || !(p > 0)) return;
+  if (p > it.p && it.p > 0) {
+    M.recordDetectedHikes([{ n: { ar: n, en: n }, was: it.p, now: p }]);
+  }
   it.n = { ar: n, en: n };
   it.p = p;
   it.q = q;
@@ -282,6 +345,7 @@ M.saveCartEdit = f => {
 };
 
 M.addCartItem = (name, priceRaw) => {
+  const ar = M.s.lang === 'ar';
   name = (name || '').trim();
   priceRaw = typeof priceRaw === 'string' ? M.toWesternDigits(priceRaw) : priceRaw;
   const p = parseFloat(priceRaw);
@@ -295,6 +359,11 @@ M.addCartItem = (name, priceRaw) => {
   }
   const id = Date.now();
   const newItem = { id, n: { ar: name, en: name }, q: 1, p, got: false };
+
+  // Also check if this cart item's price is higher than historical purchase prices!
+  const hikesFound = M.findPriceHikesForEntry({ items: [newItem] });
+  M.recordDetectedHikes(hikesFound);
+
   M.s.cart.unshift(newItem);
   if (M.api) {
     M.api.saveLocal(M.s);
@@ -303,6 +372,11 @@ M.addCartItem = (name, priceRaw) => {
   M.freshId = id;
   M.refreshCartView();
   M.freshId = null;
-  M.toast(`${M.ico('checkc', 16, 2)} ${M.t('itemAdded')}: ${name} · ${M.fmt(p)} ${M.t('cur')}`);
+  if (hikesFound.length > 0) {
+    const h = hikesFound[0];
+    M.toast(`${M.ico('trend', 16)} ${ar ? `تنبيه: سعر ${name} زاد من ${M.fmt(h.was)} إلى ${M.fmt(h.now)} (+${h.pct}%)` : `Price hike: ${name} (+${h.pct}%)`}`, 'warn');
+  } else {
+    M.toast(`${M.ico('checkc', 16, 2)} ${M.t('itemAdded')}: ${name} · ${M.fmt(p)} ${M.t('cur')}`);
+  }
   setTimeout(() => document.getElementById('cartIn')?.focus(), 40);
 };

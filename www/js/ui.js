@@ -1,4 +1,4 @@
-/* Shared UI helpers: sheets, toasts, notifications, segmented controls, gauge, illustrations, animation replay */
+/* Shared UI helpers: sheets, toasts, in-app + outside-app OS notifications, segmented controls, gauge, illustrations */
 M.$ = s => document.querySelector(s);
 M.phone = () => M.$('#phone');
 
@@ -85,17 +85,123 @@ M.toast = (msg, kind = '') => {
   clearTimeout(M._tt); M._tt = setTimeout(() => t.classList.remove('on'), 2700);
 };
 
-/* push notification banner */
+/* Dispatch OS-level notification so it appears even when the user is OUTSIDE the app / on lock screen */
+M.sendExternalOSNotification = async (title, body, delaySec = 0) => {
+  const cleanTitle = String(title || M.t('notifApp')).replace(/<[^>]+>/g, '').trim();
+  const cleanBody = String(body || '').replace(/<[^>]+>/g, '').trim();
+
+  // 1. Native iOS WKWebView Bridge (UNUserNotificationCenter — works on iPhone lock screen & outside app)
+  try {
+    if (window.webkit?.messageHandlers?.masrofiNotify) {
+      window.webkit.messageHandlers.masrofiNotify.postMessage({
+        title: cleanTitle,
+        body: cleanBody,
+        delaySec: Number(delaySec) || 0
+      });
+    }
+  } catch {}
+
+  // 2. Capacitor LocalNotifications Plugin (Native iOS & Android background notifications)
+  try {
+    const LN = window.Capacitor?.Plugins?.LocalNotifications;
+    if (LN && typeof LN.schedule === 'function') {
+      const atDate = new Date(Date.now() + Math.max(250, (Number(delaySec) || 0) * 1000));
+      await LN.schedule({
+        notifications: [{
+          id: Math.floor(Math.random() * 900000) + 1000,
+          title: cleanTitle,
+          body: cleanBody,
+          schedule: { at: atDate, allowWhileIdle: true },
+          sound: 'default'
+        }]
+      });
+      return true;
+    }
+  } catch {}
+
+  // 3. Service Worker System Notification (appears outside the app on mobile/desktop)
+  try {
+    if ('serviceWorker' in navigator && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && typeof reg.showNotification === 'function' && !(delaySec > 0)) {
+        await reg.showNotification(cleanTitle, {
+          body: cleanBody,
+          icon: 'assets/icon-192.png',
+          badge: 'assets/icon-192.png',
+          vibrate: [200, 100, 200],
+          tag: 'masrofi-' + Date.now(),
+          renotify: true
+        });
+        return true;
+      } else if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SCHEDULE_NOTIFICATION',
+          title: cleanTitle,
+          body: cleanBody,
+          delayMs: Math.max(0, (Number(delaySec) || 0) * 1000)
+        });
+        return true;
+      }
+    }
+  } catch {}
+
+  // 4. Standard Web Notification API fallback
+  try {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && !(delaySec > 0)) {
+      new Notification(cleanTitle, {
+        body: cleanBody,
+        icon: 'assets/icon-192.png',
+        badge: 'assets/icon-192.png'
+      });
+      return true;
+    }
+  } catch {}
+  return false;
+};
+
+/* Schedule background notifications (7,000 km Oil Change + Unpaid Monthly Bills) so they fire when outside the app */
+M.scheduleBackgroundNotifications = async () => {
+  try {
+    if (!M.s || !M.s.onboarded) return;
+    const aiAlert = M.getMonthlyAIAlert ? M.getMonthlyAIAlert() : null;
+    const unpaid = (M.s.bills || []).filter(b => !b.paid).sort((a, b) => a.due - b.due);
+
+    // Native iOS WKWebView background queue
+    if (window.webkit?.messageHandlers?.masrofiScheduleBg && aiAlert) {
+      window.webkit.messageHandlers.masrofiScheduleBg.postMessage({
+        monthlyTitle: aiAlert.title,
+        monthlyBody: aiAlert.body,
+        unpaidCount: unpaid.length
+      });
+    }
+
+    // Service Worker background reminder queue
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller && aiAlert) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'SYNC_BG_ALERTS',
+        title: aiAlert.title,
+        body: aiAlert.body,
+        unpaidBills: unpaid.map(b => ({ name: M.L(b.n), amount: b.amount, due: b.due }))
+      });
+    }
+  } catch {}
+};
+
+/* Push notification banner (In-App + External OS Notification when outside the app) */
 M.notify = (title, body, onTap) => {
   const n = M.$('#notif');
-  n.innerHTML = `<div class="n-ico">م</div><div style="flex:1;min-width:0">
-    <div class="n-app"><span>${M.t('notifApp')}</span><span>${M.t('now')}</span></div>
-    <div class="n-t">${title}</div><div class="n-b">${body}</div></div>`;
-  n.onclick = () => { n.classList.remove('on'); onTap && onTap(); };
-  n.classList.remove('on');
-  void n.offsetWidth;
-  requestAnimationFrame(() => requestAnimationFrame(() => n.classList.add('on')));
-  clearTimeout(M._nt); M._nt = setTimeout(() => n.classList.remove('on'), 5200);
+  if (n) {
+    n.innerHTML = `<div class="n-ico">م</div><div style="flex:1;min-width:0">
+      <div class="n-app"><span>${M.t('notifApp')}</span><span>${M.t('now')}</span></div>
+      <div class="n-t">${title}</div><div class="n-b">${body}</div></div>`;
+    n.onclick = () => { n.classList.remove('on'); onTap && onTap(); };
+    n.classList.remove('on');
+    void n.offsetWidth;
+    requestAnimationFrame(() => requestAnimationFrame(() => n.classList.add('on')));
+    clearTimeout(M._nt); M._nt = setTimeout(() => n.classList.remove('on'), 5500);
+  }
+  // Always dispatch external OS notification so it also shows outside the app / on lock screen
+  M.sendExternalOSNotification(title, body, 0);
 };
 
 /* Lottie-style success check with confetti burst — optically & geometrically centered */

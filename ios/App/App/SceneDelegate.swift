@@ -4,12 +4,14 @@ import AVFoundation
 import UserNotifications
 import Capacitor
 
-class MasrofiViewController: CAPBridgeViewController {
+class MasrofiViewController: CAPBridgeViewController, WKScriptMessageHandler {
 
     override open func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
         let config = super.webViewConfiguration(for: instanceConfiguration)
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.userContentController.add(self, name: "masrofiNotify")
+        config.userContentController.add(self, name: "masrofiScheduleBg")
         return config
     }
 
@@ -36,6 +38,43 @@ class MasrofiViewController: CAPBridgeViewController {
             DispatchQueue.main.async {
                 AVCaptureDevice.requestAccess(for: .video) { _ in }
             }
+        }
+    }
+
+    // Native iOS Notification Bridge — delivers notifications even when the user is OUTSIDE the app or on the Lock Screen
+    public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let dict = message.body as? [String: Any] else { return }
+
+        if message.name == "masrofiNotify" {
+            let title = (dict["title"] as? String) ?? "مصروفي · Masrofi"
+            let body = (dict["body"] as? String) ?? ""
+            let delaySec = max(0.5, (dict["delaySec"] as? Double) ?? 0.5)
+
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delaySec, repeats: false)
+            let req = UNNotificationRequest(identifier: "masrofi_now_\(UUID().uuidString)", content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
+        } else if message.name == "masrofiScheduleBg" {
+            let title = (dict["monthlyTitle"] as? String) ?? "تنبيه الذكاء الاصطناعي لهذا الشهر"
+            let body = (dict["monthlyBody"] as? String) ?? ""
+            guard !body.isEmpty else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+
+            // Schedule recurring monthly/daily check reminder when outside the app
+            var dateComponents = DateComponents()
+            dateComponents.hour = 10
+            dateComponents.minute = 0
+            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+            let req = UNNotificationRequest(identifier: "masrofi_monthly_ai_check", content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
         }
     }
 

@@ -1,4 +1,4 @@
-/* AI Camera Scanner — In-App Live Camera (<video playsinline>) + Real Gemini Vision OCR + Editable Verification */
+/* AI Camera Scanner — Multi-Camera Phone Switcher + In-App Live Camera (<video playsinline>) + Real Gemini Vision OCR + Price-Hike Detection */
 M.scan = {
   mode: 'receipt',
   billIdx: 0,
@@ -8,11 +8,14 @@ M.scan = {
   aiUsed: false,
   stream: null,
   facing: 'environment',
+  deviceId: null,
+  cameras: [],
+  cameraIdx: 0,
   torch: false,
   customImage: null
 };
 
-/* 3 Realistic Paper Bills for Simulator Mode */
+/* Kept only for headless API unit tests */
 M.BILL_SAMPLES = [
   {
     key: 'elec',
@@ -26,15 +29,7 @@ M.BILL_SAMPLES = [
     label: { ar: 'سونلغاز (متغيرة)', en: 'Sonelgaz (Variable)' },
     biller: { ar: 'سونلغاز · الكهرباء والغاز', en: 'Sonelgaz · Power & Gas' },
     dueText: { ar: '18 نوفمبر 2026', en: 'Nov 18, 2026' },
-    paper: `
-      <h5>سونلغاز · SONELGAZ</h5>
-      <div style="text-align:center;font-size:9.5px;opacity:.7;margin-bottom:6px">فاتورة استهلاك الكهرباء والغاز · الربع الرابع</div>
-      <div class="pl"><span>مرجع الزبون</span><span>549201184-16</span></div>
-      <div class="pl"><span>استهلاك الكهرباء</span><span>412 kWh · 4,850 DA</span></div>
-      <div class="pl"><span>استهلاك الغاز</span><span>1,620 Th · 1,780 DA</span></div>
-      <div class="pl"><span>الرسوم والضرائب</span><span>570.00 DA</span></div>
-      <div class="pl" style="font-weight:700;font-size:12.5px;margin-top:5px"><span>المبلغ المستحق</span><span class="hl" data-f="amount">7,200.00 DA</span></div>
-      <div class="pl" style="font-weight:700;font-size:12px"><span>آخر أجل للدفع</span><span class="hl" data-f="date">18/11/2026</span></div>`
+    paper: ''
   },
   {
     key: 'water',
@@ -48,14 +43,7 @@ M.BILL_SAMPLES = [
     label: { ar: 'سيال · الماء (متغيرة)', en: 'SEAAL · Water (Var)' },
     biller: { ar: 'سيال · فاتورة الماء', en: 'SEAAL · Water bill' },
     dueText: { ar: '22 نوفمبر 2026', en: 'Nov 22, 2026' },
-    paper: `
-      <h5>سيال · SEAAL</h5>
-      <div style="text-align:center;font-size:9.5px;opacity:.7;margin-bottom:6px">شركة المياه والتطهير للجزائر</div>
-      <div class="pl"><span>رقم العداد</span><span>WTR-884120</span></div>
-      <div class="pl"><span>الاستهلاك</span><span>38 m³</span></div>
-      <div class="pl"><span>رسوم التطهير</span><span>480.00 DA</span></div>
-      <div class="pl" style="font-weight:700;font-size:12.5px;margin-top:5px"><span>الإجمالي للدفع</span><span class="hl" data-f="amount">3,150.00 DA</span></div>
-      <div class="pl" style="font-weight:700;font-size:12px"><span>تاريخ الاستحقاق</span><span class="hl" data-f="date">22/11/2026</span></div>`
+    paper: ''
   },
   {
     key: 'ins2',
@@ -67,15 +55,7 @@ M.BILL_SAMPLES = [
     label: { ar: 'تأمين SAA (ثابتة)', en: 'SAA Insurance (Fixed)' },
     biller: { ar: 'SAA · تأمين أكسنت', en: 'SAA · Accent insurance' },
     dueText: { ar: '8 ديسمبر 2026', en: 'Dec 8, 2026' },
-    paper: `
-      <h5>الشركة الجزائرية للتأمين · SAA</h5>
-      <div style="text-align:center;font-size:10px;opacity:.7;margin-bottom:8px">Motor Policy Renewal Notice · إشعار تجديد</div>
-      <div class="pl"><span>Policy No.</span><span>MTR-77310-26</span></div>
-      <div class="pl"><span>Vehicle</span><span>Hyundai Accent 2019</span></div>
-      <div class="pl"><span>Plate</span><span>05821 119 16</span></div>
-      <div class="pl"><span>Insured</span><span>Umm Khalid</span></div>
-      <div class="pl" style="font-weight:700;font-size:12.5px;margin-top:6px"><span>Premium</span><span class="hl" data-f="amount">19,800.00 DA</span></div>
-      <div class="pl" style="font-weight:700;font-size:12.5px"><span>Due date</span><span class="hl" data-f="date">08/12/2026</span></div>`
+    paper: ''
   }
 ];
 
@@ -86,19 +66,78 @@ M.clearScanTimers = () => {
 };
 M.addScanTimer = id => { M.scan.timers.push(id); return id; };
 
-M.paperHtml = mode => {
-  if (mode === 'receipt') {
-    return `
-    <h5>أونو هايبر · Uno Hypermarket</h5>
-    <div style="text-align:center;font-size:9.5px;opacity:.7">Bab Ezzouar, Alger · NIF 001616123456789</div>
-    <div style="text-align:center;font-size:10px;margin:2px 0 6px">Date: <span class="hl" data-f="date">10/11/2026</span> 18:52</div>
-    ${[['Lait 1L x4', '360.00'], ['Oeufs 30', '560.00'], ['Semoule 10kg', '1,400.00'], ['Poulet 1kg', '480.00'], ['Légumes', '340.00'], ['Baguette x6', '90.00'], ['Fromage', '220.00']]
-      .map(([a, b]) => `<div class="pl"><span>${a}</span><span>${b}</span></div>`).join('')}
-    <div class="pl" style="font-weight:700;font-size:13px;border:0;margin-top:4px"><span>TOTAL</span><span class="hl" data-f="amount">3,450.00 DA</span></div>
-    <div style="text-align:center;margin-top:6px;letter-spacing:2px">|||| ||| |||| || |||</div>`;
+/* ── Discover & Label All Phone Cameras (Back Main, Ultra-Wide, Telephoto, Front) ── */
+M.refreshCameraList = async () => {
+  const ar = M.s.lang === 'ar';
+  const defaultCams = [
+    { id: 'env_main', deviceId: null, facing: 'environment', label: { ar: 'الكاميرا الخلفية', en: 'Back Camera' } },
+    { id: 'user_front', deviceId: null, facing: 'user', label: { ar: 'الكاميرا الأمامية', en: 'Front Camera' } }
+  ];
+
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+    M.scan.cameras = defaultCams;
+    M.renderCameraBar();
+    return M.scan.cameras;
   }
-  const samp = M.BILL_SAMPLES[M.scan.billIdx || 0];
-  return samp.paper;
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoInputs = devices.filter(d => d.kind === 'videoinput' && d.deviceId);
+    if (videoInputs.length >= 2) {
+      let backCount = 0;
+      let frontCount = 0;
+      M.scan.cameras = videoInputs.map((d, idx) => {
+        const raw = (d.label || '').toLowerCase();
+        const isFront = /front|user|facetime|أمام/.test(raw);
+        const isUltra = /ultra|0\.5|wide angle|واسع/.test(raw);
+        const isTele = /tele|zoom|تقريب/.test(raw);
+        let arLbl = '';
+        let enLbl = '';
+        if (isFront) {
+          frontCount++;
+          arLbl = frontCount > 1 ? `الأمامية ${frontCount}` : 'الكاميرا الأمامية';
+          enLbl = frontCount > 1 ? `Front ${frontCount}` : 'Front Camera';
+        } else if (isUltra) {
+          arLbl = 'الخلفية الواسعة (0.5x)';
+          enLbl = 'Ultra-Wide (0.5x)';
+        } else if (isTele) {
+          arLbl = 'كاميرا التقريب (Tele)';
+          enLbl = 'Telephoto';
+        } else {
+          backCount++;
+          arLbl = backCount === 1 ? 'الخلفية الأساسية' : `الكاميرا الخلفية ${backCount}`;
+          enLbl = backCount === 1 ? 'Main Back' : `Back Camera ${backCount}`;
+        }
+        return {
+          id: 'cam_' + idx,
+          deviceId: d.deviceId,
+          facing: isFront ? 'user' : 'environment',
+          label: { ar: arLbl, en: enLbl }
+        };
+      });
+    } else {
+      M.scan.cameras = defaultCams;
+    }
+  } catch {
+    M.scan.cameras = defaultCams;
+  }
+  M.renderCameraBar();
+  return M.scan.cameras;
+};
+
+M.renderCameraBar = () => {
+  const bar = document.getElementById('camSelectorBar');
+  if (!bar) return;
+  const cams = M.scan.cameras?.length ? M.scan.cameras : [
+    { id: 'env_main', deviceId: null, facing: 'environment', label: { ar: 'الكاميرا الخلفية', en: 'Back Camera' } },
+    { id: 'user_front', deviceId: null, facing: 'user', label: { ar: 'الكاميرا الأمامية', en: 'Front Camera' } }
+  ];
+  bar.innerHTML = cams.map((c, idx) => {
+    const isOn = M.scan.deviceId ? (c.deviceId === M.scan.deviceId) : (c.facing === M.scan.facing && idx === M.scan.cameraIdx);
+    return `<button type="button" class="cam-chip ${isOn ? 'on' : ''}" data-act="scan-pick-cam" data-idx="${idx}">
+      ${M.ico('camera', 12, 2.2)} <span>${M.L(c.label)}</span>
+    </button>`;
+  }).join('');
 };
 
 /* ── In-App Live Camera Stream (opens camera inside .viewfinder without leaving the app!) ── */
@@ -127,7 +166,26 @@ M.startCameraStream = async () => {
 
   // 1. Primary: Real hardware camera stream inside the app via getUserMedia
   if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
-    const constraintsList = [
+    const constraintsList = [];
+    if (M.scan.deviceId) {
+      constraintsList.push({
+        video: {
+          deviceId: { exact: M.scan.deviceId },
+          width: { ideal: 1600 },
+          height: { ideal: 1200 }
+        },
+        audio: false
+      });
+    }
+    constraintsList.push(
+      {
+        video: {
+          facingMode: { exact: M.scan.facing || 'environment' },
+          width: { ideal: 1600 },
+          height: { ideal: 1200 }
+        },
+        audio: false
+      },
       {
         video: {
           facingMode: { ideal: M.scan.facing || 'environment' },
@@ -141,7 +199,7 @@ M.startCameraStream = async () => {
         audio: false
       },
       { video: true, audio: false }
-    ];
+    );
 
     for (const constraints of constraintsList) {
       try {
@@ -157,8 +215,7 @@ M.startCameraStream = async () => {
         vid.muted = true;
         await vid.play().catch(() => {});
         vid.classList.add('on');
-        const paper = document.getElementById('paper');
-        if (paper) paper.style.opacity = '0';
+        await M.refreshCameraList();
         return true;
       } catch {
         // try next fallback constraint
@@ -166,14 +223,15 @@ M.startCameraStream = async () => {
     }
   }
 
-  // 2. Fallback: If on a desktop without a webcam or non-HTTPS origin, provide an in-app live viewfinder stream so the camera UI stays 100% inside the app
+  // 2. Fallback: In-app live viewfinder stream when testing on desktop without webcam
+  await M.refreshCameraList();
   try {
     const c = document.createElement('canvas');
     c.width = 720;
     c.height = 960;
     const ctx = c.getContext('2d');
     const drawFrame = () => {
-      ctx.fillStyle = '#0D1726';
+      ctx.fillStyle = M.scan.facing === 'user' ? '#131C31' : '#0D1726';
       ctx.fillRect(0, 0, c.width, c.height);
       ctx.strokeStyle = 'rgba(20,184,166,0.22)';
       ctx.lineWidth = 2;
@@ -195,8 +253,6 @@ M.startCameraStream = async () => {
       vid.muted = true;
       await vid.play().catch(() => {});
       vid.classList.add('on');
-      const paper = document.getElementById('paper');
-      if (paper) paper.style.opacity = '0';
       return true;
     }
   } catch {}
@@ -299,6 +355,7 @@ M.capturePhoto = async (sourceType = 'camera') => {
   });
 };
 
+/* Clean, 100% Native Camera Scanner UI with Multi-Camera Phone Switcher */
 M.openScanner = (mode = 'receipt', auto = false) => {
   M.clearScanTimers();
   M.scan.mode = mode;
@@ -307,9 +364,6 @@ M.openScanner = (mode = 'receipt', auto = false) => {
   M.scan.aiUsed = false;
   const sc = M.$('#scanner');
   const ar = M.s.lang === 'ar';
-  const billChips = mode === 'bill' ? `<div class="sc-samples">
-    ${M.BILL_SAMPLES.map((s, idx) => `<button type="button" class="sc-samp ${idx === (M.scan.billIdx || 0) ? 'on' : ''}" data-act="scan-sample" data-idx="${idx}">${M.L(s.label)}</button>`).join('')}
-  </div>` : '';
 
   sc.innerHTML = `
     <input type="file" id="scanCameraIn" accept="image/*" style="display:none">
@@ -317,33 +371,33 @@ M.openScanner = (mode = 'receipt', auto = false) => {
     <div class="sc-top">
       <button type="button" class="sc-x" data-act="scan-close" aria-label="close">${M.ico('close', 18, 2.4)}</button>
       <h3>${M.ico('spark', 15, 2)} ${M.t('scan')}</h3>
-      <div style="display:flex;gap:6px">
-        <button type="button" class="sc-x" data-act="scan-flip" aria-label="flip camera" title="${ar ? 'قلب الكاميرا' : 'Flip camera'}">${M.ico('flip', 17)}</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button type="button" class="sc-flip-pill" data-act="scan-flip" aria-label="switch camera" title="${ar ? 'التبديل بين كاميرات الهاتف' : 'Switch phone cameras'}">
+          ${M.ico('flip', 15)} <span>${ar ? 'تغيير الكاميرا' : 'Switch Cam'}</span>
+        </button>
         <button type="button" class="sc-x" data-act="scan-flash" aria-label="flash">${M.ico('flash', 18)}</button>
       </div>
     </div>
     <div class="sc-modes" data-m="${mode}"><span class="thumb"></span>
       <button type="button" class="${mode === 'receipt' ? 'on' : ''}" data-act="scan-mode" data-id="receipt">${M.t('scReceipt')}</button>
       <button type="button" class="${mode === 'bill' ? 'on' : ''}" data-act="scan-mode" data-id="bill">${M.t('scBill')}</button></div>
-    ${billChips}
     <div class="viewfinder">
       <div class="vf-grid"></div><div class="vf-noise"></div>
       <video id="camVideo" autoplay playsinline muted webkit-playsinline></video>
       <div class="vf-captured" id="vfCaptured"></div>
+      <div class="cam-bar" id="camSelectorBar"></div>
       <div class="vf-frame" id="vfFrame"><i></i><i></i><i></i><i></i></div>
-      <div class="paper" id="paper">${M.paperHtml(mode)}</div>
       <div class="laser" id="laser"></div>
       <div class="vf-hint" id="vfHint">${M.t('scanHint')}</div>
       <div class="ai-steps" id="aiSteps"></div>
       <div class="flashfx" id="flashfx"></div>
     </div>
-    <div style="padding:10px 18px 0"><button type="button" class="sc-sim" data-act="scan-run" style="width:100%">${M.ico('spark', 16, 2.2)} ${M.t('simulate')}</button></div>
     <div class="sc-bottom">
-      <button type="button" class="sc-side" data-act="scan-gallery" aria-label="gallery">${M.ico('image', 20)}</button>
+      <button type="button" class="sc-side" data-act="scan-gallery" aria-label="gallery" title="${ar ? 'اختيار صورة من المعرض' : 'Pick from gallery'}">${M.ico('image', 20)}</button>
       <button type="button" class="shutter" data-act="scan-capture" aria-label="shutter"><span></span></button>
-      <button type="button" class="sc-side" data-act="scan-manual" aria-label="manual">${M.ico('pen', 20)}</button>
-    </div>
-    ${mode === 'bill' ? `<button type="button" class="manual" data-act="scan-manual">${M.t('manual')}</button>` : ''}`;
+      <button type="button" class="sc-side" data-act="scan-manual" aria-label="manual" title="${ar ? 'إدخال يدوي' : 'Manual entry'}">${M.ico('pen', 20)}</button>
+      <button type="button" class="sc-sim" data-act="scan-run" style="display:none" aria-hidden="true"></button>
+    </div>`;
   M.$('#statusbar').classList.add('light-ink');
   requestAnimationFrame(() => {
     if (!M.scan.open) return;
@@ -355,17 +409,39 @@ M.openScanner = (mode = 'receipt', auto = false) => {
   if (auto) M.addScanTimer(setTimeout(() => M.scan.open && M.runScan(), 700));
 };
 
-M.acts['scan-sample'] = el => {
-  if (M.scan.busy) return;
-  M.scan.billIdx = +el.dataset.idx;
-  M.openScanner('bill');
-};
-
+/* Switch / Cycle through all available phone cameras */
 M.acts['scan-flip'] = async el => {
   if (M.scan.busy) return;
   M.replayAnim(el, 'bump', 350);
-  M.scan.facing = M.scan.facing === 'environment' ? 'user' : 'environment';
+  const ar = M.s.lang === 'ar';
+  const cams = M.scan.cameras?.length ? M.scan.cameras : [
+    { id: 'env_main', deviceId: null, facing: 'environment', label: { ar: 'الكاميرا الخلفية', en: 'Back Camera' } },
+    { id: 'user_front', deviceId: null, facing: 'user', label: { ar: 'الكاميرا الأمامية', en: 'Front Camera' } }
+  ];
+  M.scan.cameraIdx = ((M.scan.cameraIdx || 0) + 1) % cams.length;
+  const chosen = cams[M.scan.cameraIdx];
+  M.scan.deviceId = chosen.deviceId || null;
+  M.scan.facing = chosen.facing || (M.scan.facing === 'environment' ? 'user' : 'environment');
   await M.startCameraStream();
+  M.renderCameraBar();
+  M.toast(`${M.ico('camera', 15, 2)} ${ar ? 'تم التبديل إلى: ' : 'Switched to: '}${M.L(chosen.label)}`);
+};
+
+M.acts['scan-pick-cam'] = async el => {
+  if (M.scan.busy) return;
+  const ar = M.s.lang === 'ar';
+  const idx = Number(el.dataset.idx) || 0;
+  const cams = M.scan.cameras?.length ? M.scan.cameras : [
+    { id: 'env_main', deviceId: null, facing: 'environment', label: { ar: 'الكاميرا الخلفية', en: 'Back Camera' } },
+    { id: 'user_front', deviceId: null, facing: 'user', label: { ar: 'الكاميرا الأمامية', en: 'Front Camera' } }
+  ];
+  const chosen = cams[idx] || cams[0];
+  M.scan.cameraIdx = idx;
+  M.scan.deviceId = chosen.deviceId || null;
+  M.scan.facing = chosen.facing || 'environment';
+  await M.startCameraStream();
+  M.renderCameraBar();
+  M.toast(`${M.ico('camera', 15, 2)} ${ar ? 'تم اختيار: ' : 'Selected: '}${M.L(chosen.label)}`);
 };
 
 M.closeScanner = () => {
@@ -379,6 +455,20 @@ M.closeScanner = () => {
   M.liftSheet(false);
 };
 M.liftSheet = on => { M.$('#sheet').style.zIndex = on ? 56 : ''; M.$('#scrim').style.zIndex = on ? 55 : ''; };
+
+/* Build compact price history array to send to AI Vision so AI detects price hikes over time */
+M.buildPriceHistoryContext = () => {
+  const map = M.getHistoricalPriceMap();
+  const list = [];
+  for (const [, val] of map.entries()) {
+    const name = val.label?.ar || val.label?.en || val.label;
+    if (name && val.price > 0 && !list.some(x => x.name === name)) {
+      list.push({ name, lastPrice: val.price });
+    }
+    if (list.length >= 30) break;
+  }
+  return list;
+};
 
 M.runScan = async (customImage = null) => {
   if (M.scan.busy || !M.scan.open) return;
@@ -398,9 +488,9 @@ M.runScan = async (customImage = null) => {
       capBox.innerHTML = `<img src="${customImage}" alt="Captured paper">`;
       capBox.classList.add('on');
     }
-    if ($('paper')) $('paper').style.opacity = '0';
     if (M.api && typeof M.api.analyzeScan === 'function') {
-      aiPromise = M.api.analyzeScan({ mode, image: customImage, sampleIdx: M.scan.billIdx || 0 }).then(res => {
+      const priceHistory = M.buildPriceHistoryContext();
+      aiPromise = M.api.analyzeScan({ mode, image: customImage, priceHistory, sampleIdx: M.scan.billIdx || 0 }).then(res => {
         if (res && res.extracted) {
           M.scan.aiExtracted = res.extracted;
           M.scan.aiUsed = Boolean(res.aiUsed);
@@ -410,10 +500,6 @@ M.runScan = async (customImage = null) => {
     }
   } else {
     M.stopCameraStream();
-    if ($('paper')) {
-      $('paper').style.opacity = '1';
-      $('paper').classList.add('on');
-    }
   }
 
   $('vfFrame')?.classList.add('locked');
@@ -424,8 +510,7 @@ M.runScan = async (customImage = null) => {
     if (!M.scan.open || !box) return;
     box.querySelector('.ai-step:last-child .sp')?.replaceWith(Object.assign(document.createElement('span'), { className: 'ok', textContent: '✓' }));
     box.insertAdjacentHTML('beforeend', `<div class="ai-step"><span class="sp"></span>${M.t(k)}</div>`);
-    if (k === 's3' && !customImage) $('paper')?.querySelectorAll('.hl').forEach((h, j) => M.addScanTimer(setTimeout(() => h.classList.add('on'), j * 280)));
-  }, 400 + i * 520)));
+  }, 380 + i * 480)));
 
   M.addScanTimer(setTimeout(async () => {
     if (!M.scan.open) return;
@@ -441,7 +526,7 @@ M.runScan = async (customImage = null) => {
     box?.querySelector('.ai-step:last-child .sp')?.replaceWith(Object.assign(document.createElement('span'), { className: 'ok', textContent: '✓' }));
     $('laser')?.classList.remove('on');
     M.scanResult(mode, customImage);
-  }, 400 + steps.length * 520 + 240));
+  }, 380 + steps.length * 480 + 220));
 };
 
 M.scanResult = (mode, customImage = null) => {
@@ -475,7 +560,17 @@ M.scanResult = (mode, customImage = null) => {
   const bDueText = aiExt?.dueText ? M.L(aiExt.dueText) : M.L(samp.dueText);
   const bIsCurrent = aiExt?.isCurrentMonth !== undefined ? Boolean(aiExt.isCurrentMonth) : samp.isCurrentMonth;
 
-  const dup = !isRealPhoto && (mode === 'receipt' ? M.s.scanCount > 0 && !aiExt : (!bIsCurrent && M.s.scheduled.some(b => b.id === 'ins2')));
+  const dup = mode === 'receipt'
+    ? (rAmount > 0 && (M.s.purchases || []).some(p => M.normItemKey(p.merchant) === M.normItemKey(rMerchant) && Number(p.amount) === Number(rAmount) && p.day === M.s.day))
+    : false;
+
+  const detectedHikes = M.findPriceHikesForEntry({
+    merchant: rMerchant,
+    biller: bBiller,
+    amount: mode === 'receipt' ? rAmount : bAmount,
+    items: aiExt?.items || [],
+    detectedHikes: aiExt?.detectedHikes || []
+  });
 
   const fields = mode === 'receipt'
     ? [
@@ -494,33 +589,31 @@ M.scanResult = (mode, customImage = null) => {
       ];
 
   let alerts = '';
+  if (detectedHikes.length > 0) {
+    const h = detectedHikes[0];
+    alerts += `<div class="alert-box" style="--bc:var(--crit);margin-bottom:8px">
+      <span class="ab-i">${M.ico('trend', 20)}</span>
+      <div><b>${ar ? 'تنبيه الذكاء الاصطناعي · ارتفاع في السعر!' : 'AI Price-Hike Alert!'}</b><br>
+      ${ar
+        ? `ارتفع سعر <b>${M.L(h.n)}</b> من ${M.fmt(h.was)} إلى ${M.fmt(h.now)} ${M.t('cur')} (+${h.pct}%) مقارنة بآخر مرة.`
+        : `<b>${M.L(h.n)}</b> increased from ${M.fmt(h.was)} to ${M.fmt(h.now)} ${M.t('cur')} (+${h.pct}%).`}</div>
+    </div>`;
+  }
+  if (dup) {
+    alerts += `<div class="alert-box" style="--bc:var(--crit);margin-bottom:8px"><span class="ab-i">${M.ico('copy', 20)}</span><div>${M.t('dupWarn')}</div></div>`;
+  }
   if (isRealPhoto && !aiWorked) {
-    const hasKey = Boolean(M.api?.getIntegrations()?.aiApiKey);
-    alerts = `<div class="alert-box" style="--bc:var(--warn)">
+    alerts += `<div class="alert-box" style="--bc:var(--warn)">
       <span class="ab-i">${M.ico('spark', 20)}</span>
       <div style="flex:1">
-        <b>${ar ? (hasKey ? 'تحقق من بيانات الورقة الممسوحة' : 'أدخل مفتاح Gemini AI لقراءة الورقة تلقائياً') : 'Verify scanned paper details'}</b><br>
-        <span>${ar
-          ? (hasKey ? 'يمكنك تعديل اسم المتجر أو المبلغ أدناه قبل الحفظ.' : 'لم يتم ربط مفتاح Gemini المجاني بعد. يمكنك كتابة بيانات الورقة أدناه أو لصق مفتاح Gemini ليقرأ الفواتير تلقائياً لكل العائلة.')
-          : 'You can edit the extracted details below before saving.'}</span>
-        ${!hasKey ? `<div style="margin-top:8px;display:flex;gap:6px">
-          <input id="quickAiKeyIn" type="text" placeholder="AIzaSy..." style="flex:1;padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:var(--card-solid);color:var(--ink);font-size:16px !important;direction:ltr">
-          <button type="button" class="chip on" data-act="save-quick-ai-key">${ar ? 'حفظ وإعادة قراءة' : 'Save & Re-scan'}</button>
-        </div>` : ''}
+        <b>${ar ? 'تحقق من بيانات الورقة الممسوحة' : 'Verify scanned paper details'}</b><br>
+        <span>${ar ? 'يمكنك تعديل اسم المتجر أو المبلغ أدناه قبل الحفظ.' : 'You can edit the extracted details below before saving.'}</span>
       </div>
     </div>`;
-  } else if (dup) {
-    alerts = `<div class="alert-box" style="--bc:var(--crit)"><span class="ab-i">${M.ico('copy', 20)}</span><div>${M.t('dupWarn')}</div></div>`;
-  } else if (mode === 'receipt' && !isRealPhoto) {
-    alerts = `<div class="alert-box" style="--bc:var(--warn)"><span class="ab-i">${M.ico('trend', 20)}</span><div>${M.t('hikeWarn')(ar ? 'سميد 10 كغ' : 'Semolina 10kg', 12)}</div></div>`;
-  } else if (mode === 'bill' && bIsCurrent && !isRealPhoto) {
-    const existing = M.s.bills.find(b => b.id === (aiExt?.targetId || samp.targetId));
-    const oldP = existing ? existing.amount : samp.oldAmount;
-    alerts = `<div class="alert-box" style="--bc:var(--primary)"><span class="ab-i">${M.ico('bolt', 20)}</span><div>${M.t('varBillNote')(M.fmt(oldP), M.fmt(bAmount))}</div></div>`;
   }
 
   const editableHtml = mode === 'receipt' ? `
-    <div class="manual-form" id="scanEditBox" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+    <div class="manual-form" id="scanEditBox" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
       <div style="font-size:11.5px;font-weight:700;color:var(--muted)">${ar ? 'تعديل أو تأكيد البيانات المستخرجة من الورقة:' : 'Verify or edit extracted paper details:'}</div>
       <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:8px">
         <label>${M.t('merchant')}<input id="scEditMerchant" value="${rMerchant}" autocomplete="off"></label>
@@ -539,7 +632,7 @@ M.scanResult = (mode, customImage = null) => {
         </label>
       </div>
     </div>` : `
-    <div class="manual-form" id="scanEditBox" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+    <div class="manual-form" id="scanEditBox" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
       <div style="font-size:11.5px;font-weight:700;color:var(--muted)">${ar ? 'تعديل أو تأكيد بيانات الفاتورة المستخرجة:' : 'Verify or edit extracted bill details:'}</div>
       <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:8px">
         <label>${M.t('biller')}<input id="scEditBiller" value="${bBiller}" autocomplete="off"></label>
@@ -583,26 +676,6 @@ M.scanResult = (mode, customImage = null) => {
   });
 };
 
-M.acts['save-quick-ai-key'] = async () => {
-  const inp = document.getElementById('quickAiKeyIn');
-  const key = (inp?.value || '').trim();
-  if (!key) return;
-  M.CONFIG = M.CONFIG || {};
-  M.CONFIG.AI_API_KEY = key;
-  M.s.aiApiKey = key;
-  if (M.api) {
-    M.api.saveLocal(M.s);
-    M.api.saveSharedAiKey?.(key);
-  }
-  const savedImg = M.scan.customImage;
-  M.sheet.close();
-  M.liftSheet(false);
-  M.scan.busy = false;
-  if (savedImg) {
-    M.runScan(savedImg);
-  }
-};
-
 M.acts['scan-confirm'] = el => {
   const mode = M.scan.mode, ar = M.s.lang === 'ar';
   const samp = M.BILL_SAMPLES[M.scan.billIdx || 0];
@@ -638,13 +711,23 @@ M.acts['scan-confirm'] = el => {
     ? { ar: editedMerchant, en: editedMerchant }
     : (aiExt?.merchant || { ar: 'أونو هايبر', en: 'Uno Hypermarket' });
   const rCat = editedCat || ((aiExt?.cat && M.CATS[aiExt.cat]) ? aiExt.cat : 'groceries');
-  const rMember = editedMember || aiExt?.member || M.s.currentMemberId || 'umm';
+  const rMember = editedMember || aiExt?.member || M.s.currentMemberId || 'abu';
 
   if (mode === 'receipt') {
     const id = Date.now();
     const defaultItems = isRealPhoto
       ? [{ n: rMerchant, q: 1, p: rAmount }]
       : [['حليب 1 لتر', 'Milk 1L', 4, 90], ['بيض 30', 'Eggs 30', 1, 560], ['سميد 10 كغ', 'Semolina 10kg', 1, 1400], ['دجاج 1 كغ', 'Chicken 1kg', 1, 480], ['خضر', 'Vegetables', 1, 340], ['باقيت', 'Baguette', 6, 15], ['جبن', 'Cheese', 1, 220]].map(([a, e, q, p]) => ({ n: { ar: a, en: e }, q, p }));
+    const itemsList = (Array.isArray(aiExt?.items) && aiExt.items.length) ? aiExt.items : defaultItems;
+
+    const hikesFound = M.findPriceHikesForEntry({
+      merchant: rMerchant,
+      amount: rAmount,
+      items: itemsList,
+      detectedHikes: aiExt?.detectedHikes || []
+    });
+    M.recordDetectedHikes(hikesFound);
+
     const newP = {
       id,
       member: rMember,
@@ -654,9 +737,12 @@ M.acts['scan-confirm'] = el => {
       day: M.s.day,
       time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
       scanned: true,
-      items: (Array.isArray(aiExt?.items) && aiExt.items.length) ? aiExt.items : defaultItems
+      items: itemsList
     };
     M.s.purchases.unshift(newP);
+    if (rCat === 'car' && M.s.car) {
+      M.s.car.fuelUsed = (Number(M.s.car.fuelUsed) || 0) + rAmount;
+    }
     M.s.scanCount++;
     M.freshId = id;
     M.tickerNew = true;
@@ -684,9 +770,19 @@ M.acts['scan-confirm'] = el => {
       : (aiExt?.biller || samp.biller);
     const bKind = editedKind || aiExt?.kind || samp.kind;
 
+    const hikesFound = M.findPriceHikesForEntry({
+      biller: bBiller,
+      amount: bAmount,
+      detectedHikes: aiExt?.detectedHikes || []
+    });
+    M.recordDetectedHikes(hikesFound);
+
     if (isCur) {
-      const existing = M.s.bills.find(b => b.id === targetId);
+      const existing = M.s.bills.find(b => b.id === targetId || M.normItemKey(b.n) === M.normItemKey(bBiller));
       if (existing) {
+        if (bAmount > existing.amount && existing.amount > 0) {
+          M.recordDetectedHikes([{ n: bBiller, was: existing.amount, now: bAmount }]);
+        }
         existing.prevAmount = existing.amount;
         existing.amount = bAmount;
         existing.n = bBiller;
@@ -710,11 +806,6 @@ M.acts['scan-confirm'] = el => {
       const existingIdx = M.s.scheduled.findIndex(b => b.id === 'ins2');
       if (existingIdx >= 0) M.s.scheduled[existingIdx] = sched;
       else M.s.scheduled.push(sched);
-
-      const newCarItem = { id: 'ins2', ico: 'shield', c: '#EC4899', n: { ar: 'تأمين أكسنت (أم خالد)', en: 'Accent insurance (Umm Khalid)' }, s: { ar: `8 ديسمبر · ${M.fmt(bAmount || 19800)} د.ج`, en: `Dec 8 · ${M.fmt(bAmount || 19800)} DZD` }, days: 28 };
-      const carIdx = M.s.carItems.findIndex(ci => ci.id === 'ins2');
-      if (carIdx >= 0) M.s.carItems[carIdx] = newCarItem;
-      else M.s.carItems.splice(1, 0, newCarItem);
       M.freshBillId = 'ins2';
     }
 
@@ -730,10 +821,6 @@ M.acts['scan-confirm'] = el => {
           }
         }).catch(() => {});
       }
-    }
-
-    if (!isRealPhoto) {
-      M.scan.billIdx = ((M.scan.billIdx || 0) + 1) % M.BILL_SAMPLES.length;
     }
   }
   M.addScanTimer(setTimeout(() => {

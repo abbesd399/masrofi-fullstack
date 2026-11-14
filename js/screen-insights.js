@@ -1,4 +1,4 @@
-/* Tab 4 — AI Financial Coach: burn-rate forecast · price-hike & duplicate guard · customizable savings goal */
+/* Tab 4 — AI Financial Coach: burn-rate forecast · AI price-hike & duplicate guard · optional savings goal */
 M.burnData = () => {
   const s = M.s, c = M.calc(), cum = [0];
   const curDay = Math.max(1, s.day || 1);
@@ -50,25 +50,47 @@ M.animateRings = (root = document) => {
 
 M.screens.insights = () => {
   const s = M.s, ar = s.lang === 'ar', b = M.burnData();
-  const g = s.goal || { name: { ar: 'هدف التوفير العائلي', en: 'Family Savings Goal' }, target: 100000, saved: 0, monthly: 10000 };
+  const g = s.goal || { name: { ar: '', en: '' }, target: 0, saved: 0, monthly: 0 };
+  const hasGoal = Number(g.target) > 0;
   const target = Math.max(1, g.target || 100000);
   const monthly = Math.max(1, g.monthly || 10000);
-  const gp = Math.min(100, Math.round((g.saved || 0) / target * 100));
-  const monthsLeft = Math.max(0, Math.ceil(Math.max(0, target - (g.saved || 0)) / monthly));
-  const goalTitle = g.name ? M.L(g.name) : M.t('goalName');
+  const gp = hasGoal ? Math.min(100, Math.round((g.saved || 0) / target * 100)) : 0;
+  const monthsLeft = hasGoal ? Math.max(0, Math.ceil(Math.max(0, target - (g.saved || 0)) / monthly)) : 0;
+  const goalTitle = (g.name && (g.name.ar || g.name.en)) ? M.L(g.name) : (ar ? 'هدف التوفير العائلي' : 'Family Savings Goal');
   const hikesList = s.hikes || [];
   const dupsList = s.dups || [];
 
   const hikesSection = (hikesList.length || dupsList.length)
     ? `<div class="card tap anim" data-act="hikes">
         <div class="sec-h"><h3>${M.t('hikeT')}</h3><span class="badge crit"><span class="pulse"></span>${hikesList.length + dupsList.length}</span></div>
-        ${hikesList.slice(0, 2).map(h => `<div class="hike">${M.tile('groceries', 38)}<div class="hk-n">${M.L(h.n)}<div class="hk-p"><span class="num">${M.fmt(h.was)}</span> <span class="arr">→</span> <span class="num">${M.fmt(h.now)}</span> <span class="cur-u">${M.t('cur')}</span></div></div>
-          <span class="badge crit">${M.ico('trend', 12, 2.4)} +${Math.round((h.now - h.was) / h.was * 100)}%</span></div>`).join('')}
+        ${hikesList.slice(0, 3).map(h => `<div class="hike">${M.tile('groceries', 38)}<div class="hk-n">${M.L(h.n)}<div class="hk-p"><span class="num">${M.fmt(h.was)}</span> <span class="arr">→</span> <span class="num">${M.fmt(h.now)}</span> <span class="cur-u">${M.t('cur')}</span></div></div>
+          <span class="badge crit">${M.ico('trend', 12, 2.4)} +${Math.round((h.now - h.was) / Math.max(1, h.was) * 100)}%</span></div>`).join('')}
         ${dupsList[0] ? `<div class="hike"><span class="tile" style="--c:var(--warn);width:38px;height:38px">${M.ico('copy', 18)}</span><div class="hk-n">${M.t('dup')}<div class="hk-p">${M.L(dupsList[0].m)}</div></div><span class="badge warn">${ar ? 'مستبعد' : 'Excluded'}</span></div>` : ''}
       </div>`
     : `<div class="card tap anim" data-act="hikes">
-        <div class="sec-h"><h3>${M.t('hikeT')}</h3><span class="badge safe">${M.ico('check', 11, 3)} ${ar ? 'مفعّل' : 'Active'}</span></div>
-        <div class="muted small" style="line-height:1.5">${ar ? 'يراقب الذكاء الاصطناعي إيصالاتك تلقائياً لتنبيهك عند ارتفاع أسعار السلع أو تكرار نفس الإيصال.' : 'AI automatically monitors your scanned receipts for price hikes or duplicate charges.'}</div>
+        <div class="sec-h"><h3>${M.t('hikeT')}</h3><span class="badge safe">${M.ico('spark', 11, 2.4)} ${ar ? 'ذكاء اصطناعي نشط' : 'AI Active'}</span></div>
+        <div class="muted small" style="line-height:1.5">${ar ? 'يراقب الذكاء الاصطناعي أسعار السلع والفواتير التي تدخلها أو تصورها بالكاميرا بمرور الوقت، وينبهك هنا تلقائياً فور ارتفاع سعر أي سلعة أو فاتورة.' : 'AI automatically tracks item and bill prices over time as you scan receipts or log purchases, alerting you whenever a price increases.'}</div>
+      </div>`;
+
+  const goalCard = hasGoal
+    ? `<div class="card tap anim" data-act="goal">
+        <div class="goal">
+          <div class="ring">${M.ringSvg(gp, 'var(--primary)')}<b class="num">${gp}%</b></div>
+          <div style="flex:1"><div class="muted small">${M.t('goalT')}</div><div style="font-size:17px;font-weight:700;margin:2px 0 4px;display:flex;align-items:center;gap:6px">${M.ico('piggy', 17)} ${goalTitle}</div>
+            <div class="priv"><b>${M.money(g.saved || 0)}</b> <span class="muted small">/ ${M.money(target)}</span></div>
+            <div class="muted small" style="margin-top:4px">${M.t('reachBy')(monthsLeft)}</div></div>
+          <span class="muted">${M.ico('pen', 16)}</span>
+        </div>
+      </div>`
+    : `<div class="card tap anim" data-act="goal">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="tile" style="--c:var(--primary)">${M.ico('piggy', 21)}</span>
+          <div style="flex:1">
+            <div style="font-size:14.5px;font-weight:700">${ar ? 'هدف ادخار عائلي (اختياري)' : 'Family Savings Goal (Optional)'}</div>
+            <div class="muted small" style="margin-top:2px">${ar ? 'اضغط لتحديد هدف توفير اختياري ومتابعة تقدمك متى أردت' : 'Tap to set an optional savings goal whenever you want'}</div>
+          </div>
+          <span class="btn sm tonal">${M.ico('plus', 14, 2.5)} <span>${ar ? 'إضافة' : 'Set'}</span></span>
+        </div>
       </div>`;
 
   return `
@@ -79,15 +101,7 @@ M.screens.insights = () => {
     <div class="legend" style="color:rgba(255,255,255,.82)"><span><i style="background:#6EE7B7"></i>${M.t('actual')}</span><span><i style="background:rgba(255,255,255,.5)"></i>${M.t('ideal')}</span><span><i style="background:#FCD34D"></i>${M.t('forecast')}</span></div>
   </div>
   ${hikesSection}
-  <div class="card tap anim" data-act="goal">
-    <div class="goal">
-      <div class="ring">${M.ringSvg(gp, 'var(--primary)')}<b class="num">${gp}%</b></div>
-      <div style="flex:1"><div class="muted small">${M.t('goalT')}</div><div style="font-size:17px;font-weight:700;margin:2px 0 4px;display:flex;align-items:center;gap:6px">${M.ico('plane', 17)} ${goalTitle}</div>
-        <div class="priv"><b>${M.money(g.saved || 0)}</b> <span class="muted small">/ ${M.money(target)}</span></div>
-        <div class="muted small" style="margin-top:4px">${M.t('reachBy')(monthsLeft)}</div></div>
-      <span class="muted">${M.ico('pen', 16)}</span>
-    </div>
-  </div>`;
+  ${goalCard}`;
 };
 
 M.acts.burn = () => {
@@ -106,35 +120,36 @@ M.acts.hikes = () => {
   const hikesList = s.hikes || [];
   const dupsList = s.dups || [];
   if (!hikesList.length && !dupsList.length) {
-    return M.sheet.open(M.t('hikeT'), `<div class="empty">${M.illu('done')}<h4>${ar ? 'لا توجد زيادات أسعار أو فواتير مكررة' : 'No price hikes or duplicate receipts'}</h4><p>${ar ? 'عند تصوير الإيصالات بالكاميرا، سيقارن الذكاء الاصطناعي الأسعار تلقائياً وينبهك هنا.' : 'As you scan receipts, AI automatically compares item prices and alerts you here.'}</p></div>`);
+    return M.sheet.open(M.t('hikeT'), `<div class="empty">${M.illu('done')}<h4>${ar ? 'لا توجد زيادات أسعار مسجلة حتى الآن' : 'No price hikes detected yet'}</h4><p>${ar ? 'يقوم الذكاء الاصطناعي بحفظ أسعار مشترياتك وفواتيرك تلقائياً ومقارنتها مع مرور الوقت لتنبيهك عند غلاء أي سلعة.' : 'AI automatically remembers your item and bill prices over time and alerts you whenever a price rises.'}</p></div>`);
   }
   M.sheet.open(M.t('hikeT'), `
     <div class="group">${hikesList.map(h => `<div class="hike">${M.tile('groceries', 38)}<div class="hk-n">${M.L(h.n)}<div class="hk-p"><span>${M.t('vsLast')}</span> <span class="num">${M.fmt(h.was)}</span> <span class="arr">→</span> <span class="num">${M.fmt(h.now)}</span> <span class="cur-u">${M.t('cur')}</span></div></div>
-      <span class="badge crit">+${Math.round((h.now - h.was) / h.was * 100)}%</span></div>`).join('')}</div>
+      <span class="badge crit">+${Math.round((h.now - h.was) / Math.max(1, h.was) * 100)}%</span></div>`).join('')}</div>
     ${dupsList[0] ? `<div class="alert-box" style="--bc:var(--warn)"><span class="ab-i">${M.ico('copy', 20)}</span><div>${M.t('dupWarn')} — ${M.L(dupsList[0].m)} (${M.dateStr(dupsList[0].d)})</div></div>` : ''}`);
 };
 
 M.acts.goal = () => {
   const ar = M.s.lang === 'ar';
-  const g = M.s.goal || { name: { ar: 'هدف التوفير العائلي', en: 'Family Savings Goal' }, target: 100000, saved: 0, monthly: 10000 };
+  const g = M.s.goal || { name: { ar: '', en: '' }, target: 0, saved: 0, monthly: 0 };
+  const hasGoal = Number(g.target) > 0;
   const target = Math.max(1, g.target || 100000);
   const monthly = Math.max(1, g.monthly || 10000);
-  const gp = Math.min(100, Math.round((g.saved || 0) / target * 100));
-  const goalTitle = g.name ? M.L(g.name) : M.t('goalName');
+  const gp = hasGoal ? Math.min(100, Math.round((g.saved || 0) / target * 100)) : 0;
+  const goalTitle = (g.name && (g.name.ar || g.name.en)) ? M.L(g.name) : (ar ? 'صندوق التوفير العائلي' : 'Family Savings Fund');
 
   M.sheet.open(M.t('goalT'), `
-    <div style="text-align:center"><div class="goal" style="justify-content:center"><div class="ring" style="width:110px;height:110px">${M.ringSvg(gp, 'var(--primary)')}<b class="num" style="font-size:22px">${gp}%</b></div></div>
-      <div style="font-size:17px;font-weight:700;margin-top:6px">${goalTitle}</div><div class="muted priv">${M.money(g.saved || 0)} / ${M.money(target)}</div></div>
+    ${hasGoal ? `<div style="text-align:center"><div class="goal" style="justify-content:center"><div class="ring" style="width:110px;height:110px">${M.ringSvg(gp, 'var(--primary)')}<b class="num" style="font-size:22px">${gp}%</b></div></div>
+      <div style="font-size:17px;font-weight:700;margin-top:6px">${goalTitle}</div><div class="muted priv">${M.money(g.saved || 0)} / ${M.money(target)}</div></div>` : ''}
     <form class="manual-form" data-form="goal-edit">
-      <label>${ar ? 'اسم هدف التوفير' : 'Goal Name'}
-        <input name="gname" required value="${goalTitle}" autocomplete="off">
+      <label>${ar ? 'اسم هدف التوفير (اختياري)' : 'Goal Name (Optional)'}
+        <input name="gname" required placeholder="${ar ? 'مثال: عطلة الصيف / صندوق الطوارئ' : 'e.g. Emergency Fund'}" value="${hasGoal ? goalTitle : ''}" autocomplete="off">
       </label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <label>${ar ? 'المبلغ المستهدف' : 'Target Amount'} (${M.t('cur')})
-          <input name="gtarget" type="text" inputmode="numeric" required value="${g.target || 100000}">
+          <input name="gtarget" type="text" inputmode="numeric" required placeholder="100000" value="${hasGoal ? g.target : ''}">
         </label>
         <label>${ar ? 'المبلغ المدخر حالياً' : 'Saved So Far'} (${M.t('cur')})
-          <input name="gsaved" type="text" inputmode="numeric" value="${g.saved || 0}">
+          <input name="gsaved" type="text" inputmode="numeric" placeholder="0" value="${hasGoal ? (g.saved || 0) : 0}">
         </label>
       </div>
       <div class="group" style="padding:14px">
@@ -142,19 +157,23 @@ M.acts.goal = () => {
         <input type="range" class="range" id="gRange" name="gmonthly" min="1000" max="100000" step="1000" value="${monthly}">
         <div class="muted small" style="margin-top:10px" id="gReach">${M.t('reachBy')(Math.max(0, Math.ceil(Math.max(0, target - (g.saved || 0)) / monthly)))}</div>
       </div>
-      <button class="btn" type="submit">${M.ico('check', 18, 2.5)} ${M.t('save')}</button>
+      <button class="btn" type="submit">${M.ico('check', 18, 2.5)} <span>${M.t('save')}</span></button>
+      ${hasGoal ? `<button type="button" class="btn ghost" data-act="goal-clear" style="margin-top:4px;color:var(--crit)">${M.ico('trash', 15, 2)} <span>${ar ? 'إلغاء هدف الادخار' : 'Clear Savings Goal'}</span></button>` : ''}
     </form>`, {
     onOpen: sh => {
       M.animateRings(sh);
       const r = sh.querySelector('#gRange');
       let _goalDebounce;
       const upd = () => {
-        g.monthly = +r.value;
-        r.style.setProperty('--p', ((r.value - 1000) / 99000 * 100) + '%');
+        const curT = Number(sh.querySelector('input[name="gtarget"]')?.value) || target;
+        const curS = Number(sh.querySelector('input[name="gsaved"]')?.value) || (g.saved || 0);
+        const curM = +r.value;
+        r.style.setProperty('--p', ((curM - 1000) / 99000 * 100) + '%');
         r.style.setProperty('--dirx', M.s.lang === 'ar' ? 'left' : 'right');
-        sh.querySelector('#gMon').innerHTML = M.money(g.monthly);
-        sh.querySelector('#gReach').textContent = M.t('reachBy')(Math.max(0, Math.ceil(Math.max(0, (g.target || 100000) - (g.saved || 0)) / Math.max(1, g.monthly))));
-        if (M.api) {
+        sh.querySelector('#gMon').innerHTML = M.money(curM);
+        sh.querySelector('#gReach').textContent = M.t('reachBy')(Math.max(0, Math.ceil(Math.max(0, curT - curS) / Math.max(1, curM))));
+        if (hasGoal && M.api) {
+          g.monthly = curM;
           M.api.saveLocal(M.s);
           clearTimeout(_goalDebounce);
           _goalDebounce = setTimeout(() => {
@@ -167,12 +186,25 @@ M.acts.goal = () => {
   });
 };
 
+M.acts['goal-clear'] = () => {
+  const ar = M.s.lang === 'ar';
+  M.s.goal = { name: { ar: '', en: '' }, target: 0, saved: 0, monthly: 0 };
+  if (M.api) {
+    M.api.saveLocal(M.s);
+    M.api.updateGoal(M.s.goal).catch(() => {});
+  }
+  M.sheet.close();
+  M.render();
+  M.toast(`${M.ico('trash', 15, 2)} ${ar ? 'تم إلغاء هدف الادخار' : 'Savings goal cleared'}`);
+};
+
 M.saveGoalEdit = f => {
   const ar = M.s.lang === 'ar';
   const name = (f.gname.value || '').trim() || (ar ? 'هدف التوفير العائلي' : 'Family Savings Goal');
-  const target = parseFloat(M.toWesternDigits(String(f.gtarget.value || '100000'))) || 100000;
+  const target = parseFloat(M.toWesternDigits(String(f.gtarget.value || '0'))) || 0;
   const saved = parseFloat(M.toWesternDigits(String(f.gsaved.value || '0'))) || 0;
   const monthly = parseFloat(M.toWesternDigits(String(f.gmonthly.value || '10000'))) || 10000;
+  if (!(target > 0)) return;
   M.s.goal = { name: { ar: name, en: name }, target, saved, monthly };
   if (M.api) {
     M.api.saveLocal(M.s);
@@ -180,5 +212,5 @@ M.saveGoalEdit = f => {
   }
   M.sheet.close();
   M.render();
-  M.toast(`${M.ico('checkc', 16)} ${ar ? 'تم تحديث هدف التوفير' : 'Savings goal updated'}`);
+  M.toast(`${M.ico('checkc', 16)} ${ar ? 'تم حفظ هدف التوفير' : 'Savings goal saved'}`);
 };

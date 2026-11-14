@@ -1,4 +1,4 @@
-/* Masrofi — Modern Duotone Icons + Illustrated Family Character Avatars */
+/* Masrofi — Modern Duotone Icons + Simple Minimalist Profile Avatars */
 
 M.ICONS = {
   home: `
@@ -88,6 +88,7 @@ M.ICONS = {
   minus: `<path d="M5 12h14"/>`,
   close: `<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>`,
   chev: `<path d="M9 6l6 6-6 6"/>`,
+  chevL: `<path d="M15 6l-6 6 6 6"/>`,
   chevDown: `<path d="M6 9l6 6 6-6"/>`,
   doc: `
     <path class="duo" d="M6 3.5h8l4.5 4.5v12.5A1.5 1.5 0 0 1 17 21H6a1.5 1.5 0 0 1-1.5-1.5v-14.5A1.5 1.5 0 0 1 6 3.5z"/>
@@ -115,6 +116,11 @@ M.ICONS = {
     <rect x="3.2" y="6" width="17.6" height="13" rx="3"/>
     <path d="M16 12.5h4.8M7.5 6V4.5a1.5 1.5 0 0 1 1.5-1.5h6a1.5 1.5 0 0 1 1.5 1.5V6"/>
     <circle cx="16.2" cy="12.5" r="1.2" fill="currentColor" stroke="none"/>`,
+  wallet: `
+    <rect class="duo" x="3" y="6" width="18" height="13" rx="3"/>
+    <rect x="3" y="6" width="18" height="13" rx="3"/>
+    <path d="M16 12.5h5M6 6V4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V6"/>
+    <circle cx="16.5" cy="12.5" r="1.2" fill="currentColor" stroke="none"/>`,
   flash: `
     <path class="duo" d="M13 2.8L4.8 13.6h6.5l-.9 7.6 8.8-10.8h-6.5z"/>
     <path d="M13 2.8L4.8 13.6h6.5l-.9 7.6 8.8-10.8h-6.5z"/>`,
@@ -139,78 +145,32 @@ M.ICONS = {
     <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>`,
   flip: `
     <path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/>`,
+  user: `
+    <circle class="duo" cx="12" cy="8.5" r="4"/>
+    <path class="duo" d="M4.5 20c.8-3.8 3.6-5.8 7.5-5.8s6.7 2 7.5 5.8H4.5z"/>
+    <circle cx="12" cy="8.5" r="4"/>
+    <path d="M4.5 20c.8-3.8 3.6-5.8 7.5-5.8s6.7 2 7.5 5.8"/>`,
 };
 
-/* Bespoke Illustrated Character Portraits for Family Members (Apple Memoji / Notion Flat Vector Style) */
+/* Clean, Minimalist Modern Profile Badges (No cartoon faces — simple geometric user silhouette + soft gradient) */
+M.makeSimpleAvatarSvg = (bg1, bg2, isOwner = false) => `<svg class="char-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="av_${bg1.slice(1)}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${bg1}"/>
+      <stop offset="1" stop-color="${bg2}"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="32" fill="url(#av_${bg1.slice(1)})"/>
+  <circle cx="32" cy="24" r="10.5" fill="rgba(255,255,255,.94)"/>
+  <path d="M14 55c2.2-9.5 9-14.5 18-14.5s15.8 5 18 14.5" stroke="rgba(255,255,255,.94)" stroke-width="6" stroke-linecap="round"/>
+  ${isOwner ? `<circle cx="48" cy="16" r="7.5" fill="#FBBF24" stroke="rgba(15,23,42,.25)" stroke-width="1.5"/><path d="M45 17.5l1.2-3.5 1.8 1.8 1.8-1.8 1.2 3.5H45z" fill="#fff"/>` : ''}
+</svg>`;
+
 M.CHARS = {
-  abu: `<svg class="char-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-    <rect width="64" height="64" rx="32" fill="#0D9488"/>
-    <circle cx="32" cy="22" r="24" fill="#14B8A6" opacity=".35"/>
-    <path d="M12 64c2-13 10-19 20-19s18 6 20 19H12z" fill="#0F172A"/>
-    <path d="M25 45l7 8 7-8-3-2h-8l-3 2z" fill="#F8FAFC"/>
-    <rect x="27.5" y="38" width="9" height="9" rx="4" fill="#F1C27D"/>
-    <circle cx="19.5" cy="29" r="3.2" fill="#E0AC69"/>
-    <circle cx="44.5" cy="29" r="3.2" fill="#E0AC69"/>
-    <rect x="20.5" y="16" width="23" height="26" rx="11.5" fill="#FCD39B"/>
-    <path d="M20 24c0-7.5 5-12 12-12s12 4.5 12 12c-2-3.5-5.5-5-12-5s-10 1.5-12 5z" fill="#1E293B"/>
-    <path d="M20.8 30.5c.4 7.2 4.8 11.8 11.2 11.8s10.8-4.6 11.2-11.8c-1.8 2.8-4.5 4.2-11.2 4.2s-9.4-1.4-11.2-4.2z" fill="#1E293B"/>
-    <path d="M28.2 35.8c1.2 1.2 2.5 1.7 3.8 1.7s2.6-.5 3.8-1.7" stroke="#FFF" stroke-width="1.8" stroke-linecap="round"/>
-    <rect x="22.8" y="25.2" width="7.4" height="5.4" rx="2.2" stroke="#0F172A" stroke-width="1.7" fill="rgba(255,255,255,.18)"/>
-    <rect x="33.8" y="25.2" width="7.4" height="5.4" rx="2.2" stroke="#0F172A" stroke-width="1.7" fill="rgba(255,255,255,.18)"/>
-    <path d="M30.2 27.6h3.6" stroke="#0F172A" stroke-width="1.7"/>
-    <circle cx="26.5" cy="27.9" r="1.3" fill="#0F172A"/>
-    <circle cx="37.5" cy="27.9" r="1.3" fill="#0F172A"/>
-  </svg>`,
-
-  umm: `<svg class="char-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-    <rect width="64" height="64" rx="32" fill="#EC4899"/>
-    <circle cx="32" cy="22" r="24" fill="#F472B6" opacity=".35"/>
-    <path d="M11 64c2.5-13 10.5-19 21-19s18.5 6 21 19H11z" fill="#831843"/>
-    <path d="M17.5 29c0-9.5 6.2-16 14.5-16s14.5 6.5 14.5 16c0 8.5-3.5 17.5-14.5 19.5C21 46.5 17.5 37.5 17.5 29z" fill="#9D174D"/>
-    <ellipse cx="32" cy="29.5" rx="10.2" ry="11.5" fill="#FDE2C4"/>
-    <path d="M21.8 25c2.5-4.5 6.2-6.5 10.2-6.5s7.7 2 10.2 6.5c-3-2-6.4-3-10.2-3s-7.2 1-10.2 3z" fill="#831843"/>
-    <circle cx="25.5" cy="31.5" r="2.2" fill="#F472B6" opacity=".35"/>
-    <circle cx="38.5" cy="31.5" r="2.2" fill="#F472B6" opacity=".35"/>
-    <circle cx="27.5" cy="28.2" r="1.4" fill="#1E293B"/>
-    <circle cx="36.5" cy="28.2" r="1.4" fill="#1E293B"/>
-    <path d="M25.5 25.2c1.2-.9 2.6-.9 3.8 0M34.7 25.2c1.2-.9 2.6-.9 3.8 0" stroke="#475569" stroke-width="1.4" stroke-linecap="round"/>
-    <path d="M28.8 34c1 1.3 2.1 1.8 3.2 1.8s2.2-.5 3.2-1.8" stroke="#BE185D" stroke-width="1.8" stroke-linecap="round"/>
-    <path d="M22 44.5c3 3 6.5 4.5 10 4.5s7-1.5 10-4.5" stroke="#F472B6" stroke-width="2" stroke-linecap="round" opacity=".5"/>
-  </svg>`,
-
-  khalid: `<svg class="char-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-    <rect width="64" height="64" rx="32" fill="#3B82F6"/>
-    <circle cx="32" cy="22" r="24" fill="#60A5FA" opacity=".35"/>
-    <path d="M12 64c2-12.5 10-18.5 20-18.5S50 51.5 52 64H12z" fill="#1E3A8A"/>
-    <path d="M22 45.5c2.5 3.5 6 5.2 10 5.2s7.5-1.7 10-5.2" stroke="#3B82F6" stroke-width="2.5" stroke-linecap="round"/>
-    <rect x="28" y="38" width="8" height="9" rx="4" fill="#F1C27D"/>
-    <circle cx="20.2" cy="29.5" r="3" fill="#E0AC69"/>
-    <circle cx="43.8" cy="29.5" r="3" fill="#E0AC69"/>
-    <rect x="21" y="17" width="22" height="24.5" rx="11" fill="#FCD39B"/>
-    <path d="M19.5 24.5c0-8 5.2-13.2 12.5-13.2 5.8 0 10.5 3.2 12.2 8.5 1 .3 1.3 3.2.3 4.7-2.2-3.2-6-5-11.5-4.8-5.5.2-9.5 1.8-13.5 4.8z" fill="#0F172A"/>
-    <circle cx="27.5" cy="28.5" r="1.5" fill="#0F172A"/>
-    <circle cx="36.5" cy="28.5" r="1.5" fill="#0F172A"/>
-    <path d="M25.5 25.5l3.5-.4M35 25.1l3.5.4" stroke="#0F172A" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M28.2 34.2c1.2 1.6 2.5 2.2 3.8 2.2s2.6-.6 3.8-2.2" stroke="#0F172A" stroke-width="1.8" stroke-linecap="round"/>
-  </svg>`,
-
-  sara: `<svg class="char-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-    <rect width="64" height="64" rx="32" fill="#F59E0B"/>
-    <circle cx="32" cy="22" r="24" fill="#FBBF24" opacity=".35"/>
-    <path d="M17.5 26c0-9 6.2-14.5 14.5-14.5S46.5 17 46.5 26v18c0 2-1.5 3.5-3.5 3.5h-22c-2 0-3.5-1.5-3.5-3.5V26z" fill="#27171A"/>
-    <path d="M13 64c2.2-12 9.8-18 19-18s16.8 6 19 18H13z" fill="#7C2D12"/>
-    <path d="M25.5 46a6.5 6.5 0 0 0 13 0H25.5z" fill="#FEF3C7"/>
-    <rect x="28.2" y="38" width="7.6" height="8.5" rx="3.8" fill="#F5CBA7"/>
-    <rect x="21.5" y="18" width="21" height="23.5" rx="10.5" fill="#FDE2C4"/>
-    <path d="M20.5 25.5c1.5-6.5 6.5-10.5 12.5-10.5s10.5 4 11.5 10.5c-3.5-3.5-7.5-5.2-12-5.2s-8.5 1.7-12 5.2z" fill="#27171A"/>
-    <circle cx="25.5" cy="31.5" r="2.1" fill="#FB7185" opacity=".4"/>
-    <circle cx="38.5" cy="31.5" r="2.1" fill="#FB7185" opacity=".4"/>
-    <circle cx="27.5" cy="28.5" r="1.5" fill="#1E293B"/>
-    <circle cx="36.5" cy="28.5" r="1.5" fill="#1E293B"/>
-    <path d="M28.8 34c1 1.4 2.1 2 3.2 2s2.2-.6 3.2-2" stroke="#E11D48" stroke-width="1.8" stroke-linecap="round"/>
-    <circle cx="40.5" cy="20.5" r="2.6" fill="#F43F5E"/>
-    <circle cx="40.5" cy="20.5" r="1" fill="#FEF08A"/>
-  </svg>`
+  abu:    M.makeSimpleAvatarSvg('#14B8A6', '#0F766E', false),
+  umm:    M.makeSimpleAvatarSvg('#3B82F6', '#1D4ED8', false),
+  khalid: M.makeSimpleAvatarSvg('#8B5CF6', '#6D28D9', false),
+  sara:   M.makeSimpleAvatarSvg('#F59E0B', '#D97706', false)
 };
 
 M.charSvg = id => {

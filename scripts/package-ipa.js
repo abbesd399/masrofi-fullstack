@@ -32,7 +32,14 @@ function copyRecursive(src, dest) {
   }
 }
 
-console.log('Copying application files into App.app...');
+// 1.5 If a compiled native iOS template exists (with Mach-O binary & frameworks), copy it into App.app
+const nativeTemplate = path.join(rootDir, 'ios', 'App', 'native_template');
+if (fs.existsSync(nativeTemplate)) {
+  console.log('Including native compiled binary & frameworks from native_template...');
+  copyRecursive(nativeTemplate, appDir);
+}
+
+console.log('Copying application files into App.app/public...');
 copyRecursive(wwwDir, path.join(appDir, 'public'));
 
 // 2. Prepare Info.plist

@@ -1,4 +1,4 @@
-/* Masrofi — Dynamic Family Data Model (Clean Real State by Default + Optional Demo Seed for Tests) */
+/* Masrofi — Dynamic Family Data Model + 7,000 km AI Oil Tracker + Smart Price-Hike Detector Over Time */
 M.CATS = {
   groceries: { c: '#10B981', ico: 'cart',    n: { ar: 'مقاضي البيت', en: 'Groceries' } },
   car:       { c: '#3B82F6', ico: 'car',     n: { ar: 'السيارة والوقود', en: 'Car & Fuel' } },
@@ -12,16 +12,16 @@ M.CATS = {
 
 M.AVATAR_COLORS = {
   abu: '#0D9488',
-  umm: '#EC4899',
-  khalid: '#3B82F6',
+  umm: '#3B82F6',
+  khalid: '#8B5CF6',
   sara: '#F59E0B'
 };
 
 M.DEFAULT_MEMBERS = [
-  { id: 'abu',    avatar: 'abu',    n: { ar: 'أبو خالد', en: 'Abu Khalid' }, i: { ar: 'أ', en: 'A' }, c: '#0D9488', role: { ar: 'الأب · صاحب الراتب', en: 'Dad · salary owner' } },
-  { id: 'umm',    avatar: 'umm',    n: { ar: 'أم خالد', en: 'Umm Khalid' }, i: { ar: 'م', en: 'U' }, c: '#EC4899', role: { ar: 'الأم', en: 'Mom' } },
-  { id: 'khalid', avatar: 'khalid', n: { ar: 'خالد', en: 'Khalid' },       i: { ar: 'خ', en: 'K' }, c: '#3B82F6', role: { ar: 'الابن · 17 سنة', en: 'Son · 17' } },
-  { id: 'sara',   avatar: 'sara',   n: { ar: 'سارة', en: 'Sara' },         i: { ar: 'س', en: 'S' }, c: '#F59E0B', role: { ar: 'الابنة · 14 سنة', en: 'Daughter · 14' } },
+  { id: 'abu',    avatar: 'abu',    n: { ar: 'أبو خالد', en: 'Abu Khalid' }, i: { ar: 'أ', en: 'A' }, c: '#0D9488', role: { ar: 'العائلة', en: 'Family' } },
+  { id: 'umm',    avatar: 'umm',    n: { ar: 'أم خالد', en: 'Umm Khalid' }, i: { ar: 'م', en: 'U' }, c: '#3B82F6', role: { ar: 'العائلة', en: 'Family' } },
+  { id: 'khalid', avatar: 'khalid', n: { ar: 'خالد', en: 'Khalid' },       i: { ar: 'خ', en: 'K' }, c: '#8B5CF6', role: { ar: 'العائلة', en: 'Family' } },
+  { id: 'sara',   avatar: 'sara',   n: { ar: 'سارة', en: 'Sara' },         i: { ar: 'س', en: 'S' }, c: '#F59E0B', role: { ar: 'العائلة', en: 'Family' } },
 ];
 
 Object.defineProperty(M, 'MEMBERS', {
@@ -40,7 +40,7 @@ M.genFamilyCode = () => {
   return code;
 };
 
-/* Clean state for real users (starts with onboarding if not onboarded yet, zero fake demo items) */
+/* Clean state for real users (oil change every 7,000 km, no fixed fuel budget, optional savings goal starts at 0) */
 M.cleanState = () => {
   const today = new Date().getDate() || 14;
   return {
@@ -49,7 +49,7 @@ M.cleanState = () => {
     familyName: { ar: 'محفظة العائلة', en: 'Family Wallet' },
     currentMemberId: 'abu',
     members: [
-      { id: 'abu', avatar: 'abu', n: { ar: 'صاحب المحفظة', en: 'Wallet Owner' }, i: { ar: 'أ', en: 'A' }, c: '#0D9488', role: { ar: 'رب الأسرة · مدير المحفظة', en: 'Family Admin' } }
+      { id: 'abu', avatar: 'abu', n: { ar: 'حسابي', en: 'My Profile' }, i: { ar: 'ح', en: 'M' }, c: '#0D9488', role: { ar: 'العائلة', en: 'Family' } }
     ],
     salary: 0,
     payday: 1,
@@ -58,12 +58,14 @@ M.cleanState = () => {
     purchases: [],
     bills: [],
     scheduled: [],
-    car: { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '00000 123 16', odo: 0, nextOil: 10000, kmDay: 40, fuelBudget: 5000, fuelUsed: 0 },
-    carItems: [],
+    car: { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '', odo: 0, oilInterval: 7000, lastOilOdo: 0, nextOil: 7000, kmDay: 45, fuelUsed: 0 },
+    carItems: [
+      { id: 'oil', ico: 'drop', c: '#F59E0B', n: { ar: 'تغيير زيت المحرك (كل 7,000 كم)', en: 'Engine oil change (every 7,000 km)' }, s: { ar: 'عند 7,000 كم · تنبيه الذكاء الاصطناعي مفعّل', en: 'At 7,000 km · AI reminder active' }, days: 30, ai: true }
+    ],
     hikes: [],
     dups: [],
     cart: [],
-    goal: { name: { ar: 'هدف التوفير العائلي', en: 'Family Savings Goal' }, target: 100000, saved: 0, monthly: 10000 },
+    goal: { name: { ar: '', en: '' }, target: 0, saved: 0, monthly: 0 },
     famFilter: 'all', billFilter: 'all', scanCount: 0, bannerHidden: false, lastState: null,
   };
 };
@@ -71,7 +73,7 @@ M.cleanState = () => {
 const I = (ar, en, q, p) => ({ n: { ar, en }, q, p });
 const P = (id, member, mar, men, cat, amount, day, time, items, scanned = true) => ({ id, member, merchant: { ar: mar, en: men }, cat, amount, day, time, items: items || [], scanned });
 
-/* Demo seed kept for automated test suites and desktop studio simulator */
+/* Demo seed kept strictly for automated test suites on port 3088/3099 */
 M.demoSeed = () => ({
   onboarded: true,
   familyCode: 'MSR-2026',
@@ -87,7 +89,7 @@ M.demoSeed = () => ({
     P(5, 'umm', 'أرديس', 'Ardis', 'groceries', 4500, 7, '7:10 PM', [I('مقاضي الأسبوع', 'Weekly groceries', 1, 4500)]),
     P(6, 'abu', 'كوندور', 'Condor Store', 'home', 6900, 6, '8:00 PM', [I('مكنسة كهربائية', 'Vacuum cleaner', 1, 6900)]),
     P(7, 'khalid', 'بيتزيريا البهجة', 'El Bahdja Pizzeria', 'dining', 1600, 5, '10:20 PM', [I('وجبات عائلية', 'Family meals', 2, 800)], false),
-    P(8, 'umm', 'سوق الخضر', 'Local market', 'groceries', 3800, 3, '6:00 PM', [I('خضر ولحم', 'Veg & meat', 1, 3800)]),
+    P(8, 'umm', 'سوق الخضر', 'Local market', 'groceries', 3800, 3, '6:00 PM', [I('خضر ولحم', 'Veg & meat' , 1, 3800)]),
     P(9, 'abu', 'نفطال', 'Naftal', 'car', 2000, 2, '7:45 AM', [I('بنزين', 'Petrol', 1, 2000)], false),
     P(10, 'sara', 'مركز باب الزوار', 'Bab Ezzouar Mall', 'family', 3600, 2, '4:30 PM', [I('ملابس', 'Clothes', 3, 1200)]),
     P(11, 'abu', 'إيريس', 'IRIS Store', 'home', 4200, 1, '9:00 PM', [I('آلة قهوة', 'Coffee maker', 1, 4200)]),
@@ -101,10 +103,10 @@ M.demoSeed = () => ({
     { id: 'subs',  n: { ar: 'رصيد موبيليس', en: 'Mobilis credit' }, cat: 'net', amount: 1000, prevAmount: 1000, due: 3, paid: true, paidDay: 3, kind: 'var' },
   ],
   scheduled: [],
-  car: { n: { ar: 'رونو سامبول 2021', en: 'Renault Symbol 2021' }, plate: '01234 121 16', odo: 92400, nextOil: 95000, kmDay: 110, fuelBudget: 6000, fuelUsed: 3500 },
+  car: { n: { ar: 'رونو سامبول 2021', en: 'Renault Symbol 2021' }, plate: '01234 121 16', odo: 69300, oilInterval: 7000, lastOilOdo: 63000, nextOil: 70000, kmDay: 50, fuelUsed: 3500 },
   carItems: [
     { id: 'ins',  ico: 'shield', c: '#3B82F6', n: { ar: 'تجديد التأمين', en: 'Insurance renewal' }, s: { ar: '15 نوفمبر · 18,500 د.ج', en: 'Nov 15 · 18,500 DZD' }, days: 5 },
-    { id: 'oil',  ico: 'drop',   c: '#F59E0B', n: { ar: 'تغيير الزيت والصيانة', en: 'Oil change & service' }, s: { ar: 'عند 95,000 كم · ~4,500 د.ج', en: 'At 95,000 km · ~4,500 DZD' }, days: 24, ai: true },
+    { id: 'oil',  ico: 'drop',   c: '#F59E0B', n: { ar: 'تغيير الزيت (كل 7,000 كم)', en: 'Oil change (every 7,000 km)' }, s: { ar: 'عند 70,000 كم · متبقي 700 كم', en: 'At 70,000 km · 700 km left' }, days: 14, ai: true },
     { id: 'inst', ico: 'card',   c: '#8B5CF6', n: { ar: 'قسط السيارة', en: 'Car installment' }, s: { ar: 'القسط 25 من 60 · 18,000 د.ج', en: 'Payment 25 of 60 · 18,000 DZD' }, days: 21 },
     { id: 'fahs', ico: 'checkc', c: '#10B981', n: { ar: 'المراقبة التقنية', en: 'Technical inspection' }, s: { ar: '3 فبراير 2027', en: 'Feb 3, 2027' }, days: 85 },
   ],
@@ -126,7 +128,6 @@ M.demoSeed = () => ({
   famFilter: 'all', billFilter: 'all', scanCount: 0, bannerHidden: false, lastState: null,
 });
 
-/* M.seed() returns cleanState for real mobile/standalone app users, or demoSeed when in Automated Test mode */
 M.seed = () => {
   if (typeof window !== 'undefined' && (window.__MASROFI_TEST_MODE__ || window.location.port === '3088' || window.location.port === '3099')) {
     return M.demoSeed();
@@ -142,6 +143,186 @@ M.SIM_PURCHASES = [
   ['umm', 'أونو هايبر', 'Uno Hypermarket', 'groceries', [5000, 9000]],
   ['khalid', 'مطعم الكرم', 'El Karam Restaurant', 'dining', [1200, 2400]],
 ];
+
+/* ── Smart Monthly AI Car Oil (Every 7,000 km) & Bills Alert Engine ── */
+M.getCarOilStatus = () => {
+  const s = M.s || {};
+  const car = s.car || { odo: 0, oilInterval: 7000, lastOilOdo: 0, nextOil: 7000, kmDay: 45 };
+  const interval = 7000;
+  car.oilInterval = 7000;
+  const odo = Math.max(0, Number(car.odo) || 0);
+  let nextOil = Number(car.nextOil) || 7000;
+  // Always enforce the 7,000 km cycle (fix any legacy 10,000 km value from cache/Supabase)
+  if (odo < 7000) {
+    nextOil = 7000;
+  } else if (nextOil === 10000 || nextOil <= odo || (nextOil - odo) > 7000) {
+    const base = Number(car.lastOilOdo) > 0 && (odo - Number(car.lastOilOdo)) < 7000
+      ? Number(car.lastOilOdo)
+      : Math.floor(odo / 7000) * 7000;
+    nextOil = base + 7000;
+  }
+  car.nextOil = nextOil;
+  const toOil = Math.max(0, nextOil - odo);
+  const kmDay = Math.max(1, Number(car.kmDay) || 45);
+  const days = Math.max(1, Math.round(toOil / kmDay));
+  const dueThisMonth = toOil <= 1500 || days <= 30;
+  return { odo, interval, nextOil, toOil, kmDay, days, dueThisMonth };
+};
+
+M.syncCarOilItem = () => {
+  const s = M.s;
+  if (!s) return;
+  const st = M.getCarOilStatus();
+  if (!Array.isArray(s.carItems)) s.carItems = [];
+  const oilItem = {
+    id: 'oil',
+    ico: 'drop',
+    c: '#F59E0B',
+    n: { ar: `تغيير الزيت (كل ${M.fmt ? M.fmt(st.interval) : '7,000'} كم)`, en: `Oil change (every ${M.fmt ? M.fmt(st.interval) : '7,000'} km)` },
+    s: {
+      ar: `عند ${M.fmt ? M.fmt(st.nextOil) : st.nextOil} كم · متبقي ${M.fmt ? M.fmt(st.toOil) : st.toOil} كم`,
+      en: `At ${M.fmt ? M.fmt(st.nextOil) : st.nextOil} km · ${M.fmt ? M.fmt(st.toOil) : st.toOil} km left`
+    },
+    days: st.days,
+    ai: true
+  };
+  const idx = s.carItems.findIndex(x => x.id === 'oil');
+  if (idx >= 0) s.carItems[idx] = oilItem;
+  else s.carItems.unshift(oilItem);
+};
+
+M.getMonthlyAIAlert = () => {
+  const s = M.s || {};
+  const ar = s.lang === 'ar';
+  const oil = M.getCarOilStatus();
+  const unpaid = (s.bills || []).filter(b => !b.paid).sort((a, b) => a.due - b.due);
+  const fmt = M.fmt || (n => String(n));
+
+  let title = ar ? 'تنبيه الذكاء الاصطناعي لهذا الشهر' : 'This Month’s AI Smart Alert';
+  let body = '';
+  if (oil.dueThisMonth && unpaid.length > 0) {
+    body = ar
+      ? `يجب تغيير زيت السيارة هذا الشهر (دورة كل ${fmt(oil.interval)} كم — متبقي ${fmt(oil.toOil)} كم فقط) + لديك ${unpaid.length} فواتير مستحقة.`
+      : `Car oil change due this month (every ${fmt(oil.interval)} km — ${fmt(oil.toOil)} km left) + ${unpaid.length} unpaid bills.`;
+  } else if (oil.dueThisMonth) {
+    body = ar
+      ? `حان موعد تغيير زيت السيارة هذا الشهر (تغيير كل ${fmt(oil.interval)} كم — متبقي ${fmt(oil.toOil)} كم عند ${fmt(oil.nextOil)} كم).`
+      : `Car oil change is due this month (every ${fmt(oil.interval)} km — ${fmt(oil.toOil)} km left at ${fmt(oil.nextOil)} km).`;
+  } else if (unpaid.length > 0) {
+    body = ar
+      ? `لديك ${unpaid.length} فواتير مستحقة هذا الشهر (أقربها يوم ${unpaid[0]?.due ?? 15}) · ومتبقي ${fmt(oil.toOil)} كم لتغيير زيت السيارة (كل ${fmt(oil.interval)} كم).`
+      : `You have ${unpaid.length} bills due this month · and ${fmt(oil.toOil)} km left until your 7,000 km oil change.`;
+  } else {
+    body = ar
+      ? `متابعة السيارة (دورة كل ${fmt(oil.interval)} كم): متبقي ${fmt(oil.toOil)} كم لتغيير الزيت القادم عند عداد ${fmt(oil.nextOil)} كم.`
+      : `Car oil tracker (every ${fmt(oil.interval)} km): ${fmt(oil.toOil)} km left until next oil change at ${fmt(oil.nextOil)} km.`;
+  }
+  return { title, body, oil, unpaid };
+};
+
+/* ── Smart AI & Historical Price-Hike Detection Over Time ── */
+M.normItemKey = str => {
+  if (!str) return '';
+  const s = typeof str === 'object' ? (str.ar || str.en || '') : String(str);
+  return s.trim().toLowerCase().replace(/[\s\-_·.,]+/g, ' ');
+};
+
+M.getHistoricalPriceMap = (excludePurchaseId = null) => {
+  const map = new Map();
+  const s = M.s || {};
+  const purchList = [...(s.purchases || [])].reverse();
+  for (const p of purchList) {
+    if (excludePurchaseId && p.id === excludePurchaseId) continue;
+    if (Array.isArray(p.items) && p.items.length) {
+      for (const it of p.items) {
+        const unitP = Number(it.p);
+        if (unitP > 0) {
+          const kAr = M.normItemKey(it.n?.ar);
+          const kEn = M.normItemKey(it.n?.en);
+          if (kAr) map.set(kAr, { price: unitP, label: it.n });
+          if (kEn) map.set(kEn, { price: unitP, label: it.n });
+        }
+      }
+    }
+    const mKey = M.normItemKey(p.merchant?.ar || p.merchant);
+    if (mKey && Number(p.amount) > 0 && (!p.items || p.items.length <= 1)) {
+      map.set(mKey, { price: Number(p.amount), label: p.merchant });
+    }
+  }
+  for (const b of (s.bills || [])) {
+    const bKey = M.normItemKey(b.n?.ar || b.n);
+    const refAmt = Number(b.prevAmount || b.amount);
+    if (bKey && refAmt > 0) {
+      map.set(bKey, { price: refAmt, label: b.n });
+    }
+  }
+  return map;
+};
+
+M.findPriceHikesForEntry = (entry = {}, excludeId = null) => {
+  const hist = M.getHistoricalPriceMap(excludeId);
+  const found = [];
+  const checkOne = (nameObj, newPrice) => {
+    const p = Number(newPrice);
+    if (!(p > 0) || !nameObj) return;
+    const label = typeof nameObj === 'object' ? nameObj : { ar: String(nameObj), en: String(nameObj) };
+    const kAr = M.normItemKey(label.ar);
+    const kEn = M.normItemKey(label.en);
+    const prev = (kAr && hist.get(kAr)) || (kEn && hist.get(kEn));
+    if (prev && prev.price > 0 && p > prev.price) {
+      const pct = Math.round(((p - prev.price) / prev.price) * 100);
+      if (pct >= 1) {
+        found.push({ n: label, was: prev.price, now: p, pct, day: M.s?.day || 14 });
+      }
+    }
+  };
+
+  if (Array.isArray(entry.detectedHikes)) {
+    for (const dh of entry.detectedHikes) {
+      if (dh && Number(dh.now) > Number(dh.was) && Number(dh.was) > 0) {
+        found.push({
+          n: typeof dh.n === 'object' ? dh.n : { ar: String(dh.n || 'صنف'), en: String(dh.n || 'Item') },
+          was: Number(dh.was),
+          now: Number(dh.now),
+          pct: Math.round(((Number(dh.now) - Number(dh.was)) / Number(dh.was)) * 100),
+          day: M.s?.day || 14
+        });
+      }
+    }
+  }
+
+  if (Array.isArray(entry.items) && entry.items.length) {
+    for (const it of entry.items) {
+      checkOne(it.n, it.p);
+    }
+  }
+  if (entry.merchant && (!entry.items || entry.items.length <= 1)) {
+    checkOne(entry.merchant, entry.amount);
+  }
+  if (entry.biller) {
+    checkOne(entry.biller, entry.amount);
+  }
+  return found;
+};
+
+M.recordDetectedHikes = hikes => {
+  if (!Array.isArray(hikes) || !hikes.length || !M.s) return [];
+  if (!Array.isArray(M.s.hikes)) M.s.hikes = [];
+  const added = [];
+  for (const h of hikes) {
+    const key = M.normItemKey(h.n?.ar || h.n?.en);
+    if (!key) continue;
+    const existingIdx = M.s.hikes.findIndex(x => M.normItemKey(x.n?.ar || x.n?.en) === key);
+    const cleanHike = { n: h.n, was: Number(h.was), now: Number(h.now) };
+    if (existingIdx >= 0) {
+      M.s.hikes[existingIdx] = cleanHike;
+    } else {
+      M.s.hikes.unshift(cleanHike);
+    }
+    added.push(h);
+  }
+  return added;
+};
 
 /* derived numbers — safe against salary = 0 or daysLeft = 0 */
 M.calc = () => {

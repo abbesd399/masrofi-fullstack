@@ -1,4 +1,4 @@
-/* Tab 2 — Bills & Car Hub (Fixed vs Variable Bills + Smart Customizable Car Tracker) */
+/* Tab 2 — Bills & Car Hub (Fixed vs Variable Bills + 7,000 km AI Car Oil Tracker without Fixed Fuel Budget) */
 M.carSvg = () => `<svg class="car-svg" viewBox="0 0 250 105">
   <defs>
     <linearGradient id="cb" x1="0" y1="0" x2="1" y2="1">
@@ -89,10 +89,13 @@ M.billsBodyHtml = () => {
     </div>
     <div class="card" id="billsCard">${M.billsListCardHtml()}</div>`;
   }
-  const car = s.car || { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '00000 123 16', odo: 0, nextOil: 10000, kmDay: 40, fuelBudget: 5000, fuelUsed: 0 };
-  const toOil = Math.max(0, (car.nextOil || 10000) - (car.odo || 0));
-  const kmDay = Math.max(1, car.kmDay || 40);
-  const fuelPct = car.fuelBudget > 0 ? Math.min(100, (car.fuelUsed / car.fuelBudget) * 100) : 0;
+
+  if (typeof M.syncCarOilItem === 'function') M.syncCarOilItem();
+  const car = s.car || { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '', odo: 0, oilInterval: 7000, nextOil: 7000, kmDay: 45, fuelUsed: 0 };
+  const oil = M.getCarOilStatus ? M.getCarOilStatus() : { odo: car.odo || 0, interval: 7000, nextOil: car.nextOil || 7000, toOil: Math.max(0, (car.nextOil || 7000) - (car.odo || 0)), days: 30 };
+  const carPurchFuel = (s.purchases || []).filter(p => p.cat === 'car').reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+  const fuelSpent = Math.max(Number(car.fuelUsed) || 0, carPurchFuel);
+
   return `
   <div class="car3d">
     <div class="car-card" data-act="car-timeline" data-tilt3d>
@@ -100,28 +103,57 @@ M.billsBodyHtml = () => {
       <div class="cc-top">
         <div>
           <div class="cc-name">${M.L(car.n)} <span style="opacity:.75;display:inline-flex;vertical-align:middle">${M.ico('pen', 13, 2)}</span></div>
-          <div class="cc-sub">${M.t('reminderOn')}</div>
+          <div class="cc-sub">${ar ? `التغيير دائماً عند ${M.fmt(oil.nextOil)} كم (دورة 7,000 كم)` : `Always at ${M.fmt(oil.nextOil)} km (7,000 km cycle)`}</div>
         </div>
         <span class="plate">DZ · ${car.plate || '—'}</span>
       </div>
       ${M.carSvg()}
-      <div class="cc-odo"><b class="num">${M.fmt(car.odo || 0)}</b><span>${M.t('odo')} · ${M.t('km')}</span></div>
+      <div class="cc-odo"><b class="num">${M.fmt(oil.odo)}</b><span>${M.t('odo')} · ${M.t('km')}</span></div>
     </div>
   </div>
-  <div class="ai-pill"><span class="spark">${M.ico('spark', 16, 2)}</span><span>${M.t('aiOdo')(M.fmt(toOil), Math.round(toOil / kmDay))}</span></div>
+  <div class="ai-pill">
+    <span class="spark">${M.ico('spark', 16, 2)}</span>
+    <div style="flex:1;min-width:0">
+      <div>${M.t('aiOdo')(M.fmt(oil.toOil), oil.days)}</div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button type="button" class="btn sm tonal" data-act="car-oil-reset" style="height:32px;font-size:11.5px;padding:0 11px">
+          ${M.ico('check', 13, 2.4)} <span>${ar ? 'تم تغيير الزيت اليوم (+7,000 كم)' : 'Oil Changed Today (+7,000 km)'}</span>
+        </button>
+        <button type="button" class="btn sm plain" data-act="ai-month-notify" style="height:32px;font-size:11.5px;padding:0 11px">
+          ${M.ico('bell', 13, 2)} <span>${ar ? 'إرسال تنبيه الشهر' : 'Send Monthly Alert'}</span>
+        </button>
+      </div>
+    </div>
+  </div>
   <div class="card">
     <div class="sec-h">
       <h3>${M.t('carObl')}</h3>
-      <button type="button" class="btn sm tonal" data-act="car-edit">${M.ico('pen', 13, 2)} <span>${ar ? 'تعديل السيارة' : 'Edit Car'}</span></button>
+      <button type="button" class="btn sm tonal" data-act="car-edit">${M.ico('pen', 13, 2)} <span>${ar ? 'تحديث العداد' : 'Update Odometer'}</span></button>
     </div>
     <div class="list">${(s.carItems || []).map(it => `<div class="row" data-act="car-item" data-id="${it.id}">
       <span class="tile" style="--c:${it.c}">${M.ico(it.ico, 20)}</span>
       <div class="r-main"><div class="r-t">${M.L(it.n)} ${it.ai ? `<span class="badge info">AI</span>` : ''}</div><div class="r-s">${M.L(it.s)}</div></div>
       <div class="count ${it.days <= 7 ? 'crit' : it.days <= 30 ? 'warn' : ''}"><b class="num">${it.days}</b><span>${M.t('days')}</span></div></div>`).join('')}
-      <div class="row" data-act="car-item" data-id="fuel"><span class="tile" style="--c:#06B6D4">${M.ico('fuel', 20)}</span>
-        <div class="r-main"><div class="r-t">${M.t('fuelBudget')}</div><div class="bar" style="margin-top:8px;--bc:#06B6D4"><i style="width:${fuelPct}%"></i></div></div>
-        <div class="r-end small priv"><b class="num">${M.fmt(car.fuelUsed || 0)}</b>/<span class="num">${M.fmt(car.fuelBudget || 0)}</span></div></div>
+      <div class="row" data-act="car-item" data-id="fuel">
+        <span class="tile" style="--c:#06B6D4">${M.ico('fuel', 20)}</span>
+        <div class="r-main">
+          <div class="r-t">${ar ? 'تعبئة البنزين ومصاريف السيارة' : 'Petrol Fill-Ups & Car Expenses'}</div>
+          <div class="r-s">${ar ? 'سجّل سعر كل تعبئة بنزين بالأسفل' : 'Tap for fill-up history or enter price below'}</div>
+        </div>
+        <div class="r-end priv" style="font-weight:800;font-size:14.5px;color:var(--primary)">${M.money(fuelSpent)}</div>
+      </div>
     </div>
+    <form class="add-item" data-form="fuel-add" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+      <div class="small muted" style="margin-bottom:6px;font-weight:600">${ar ? 'هل قمت بتعبئة البنزين؟ اكتب سعر التعبئة هنا:' : 'Filled up petrol? Enter the fill-up price:'}</div>
+      <div class="add-row">
+        <div class="in-wrap in-price" style="flex:1">
+          <input name="fuelPrice" type="text" inputmode="decimal" required placeholder="${ar ? 'سعر تعبئة البنزين (مثال: 1500 د.ج)' : 'Petrol fill-up price (e.g. 1500 DZD)'}" autocomplete="off">
+        </div>
+        <button type="submit" class="btn sm" style="height:44px;padding:0 15px;border-radius:12px;flex:none">
+          ${M.ico('fuel', 15, 2.2)} <span>${ar ? 'تسجيل البنزين' : 'Log Petrol'}</span>
+        </button>
+      </div>
+    </form>
   </div>`;
 };
 
@@ -240,6 +272,13 @@ M.saveBillEdit = f => {
   const raw = typeof f.amt.value === 'string' ? M.toWesternDigits(f.amt.value) : f.amt.value;
   const amt = parseFloat(raw);
   if (!(amt > 0)) return;
+  const oldAmt = Number(b.amount) || 0;
+  let hikeIncreased = false;
+  if (oldAmt > 0 && amt > oldAmt && typeof M.recordDetectedHikes === 'function') {
+    b.prevAmount = oldAmt;
+    M.recordDetectedHikes([{ n: b.n, was: oldAmt, now: amt }]);
+    hikeIncreased = true;
+  }
   b.amount = amt;
   b.kind = f.kind.value || b.kind;
   if (M.api) {
@@ -249,7 +288,11 @@ M.saveBillEdit = f => {
   M.sheet.close();
   M.render();
   M.checkThreshold();
-  M.toast(`${M.ico('checkc', 16, 2)} ${M.t('billUpdated')} · ${M.fmt(amt)} ${M.t('cur')}`);
+  if (hikeIncreased) {
+    M.toast(`${M.ico('trend', 16, 2)} ${M.s.lang === 'ar' ? `تم رصد زيادة في الفاتورة (+${Math.round(((amt - oldAmt) / oldAmt) * 100)}%)` : `Bill increase detected (+${Math.round(((amt - oldAmt) / oldAmt) * 100)}%)`}`);
+  } else {
+    M.toast(`${M.ico('checkc', 16, 2)} ${M.t('billUpdated')} · ${M.fmt(amt)} ${M.t('cur')}`);
+  }
 };
 
 M.acts['pay-sheet'] = el => {
@@ -267,11 +310,32 @@ M.acts['pay-sheet'] = el => {
   setTimeout(() => { M.sheet.close(); M.render(); M.checkThreshold(); }, 1300);
 };
 
-/* Editable Car Profile Modal */
+/* One-Tap Reset Oil Change (+7,000 km from current odometer) */
+M.acts['car-oil-reset'] = () => {
+  const ar = M.s.lang === 'ar';
+  const car = M.s.car || { odo: 0, oilInterval: 7000 };
+  const interval = Number(car.oilInterval) || 7000;
+  const odo = Number(car.odo) || 0;
+  car.oilInterval = interval;
+  car.lastOilOdo = odo;
+  car.nextOil = odo + interval;
+  M.s.car = car;
+  if (typeof M.syncCarOilItem === 'function') M.syncCarOilItem();
+  if (M.api) {
+    M.api.saveLocal(M.s);
+    M.api.updateCar({ car: M.s.car, carItems: M.s.carItems }).catch(() => {});
+  }
+  M.sheet.close();
+  M.render();
+  M.toast(`${M.ico('checkc', 16)} ${ar ? `تم ضبط تغيير الزيت القادم عند ${M.fmt(car.nextOil)} كم (+${M.fmt(interval)} كم)` : `Next oil change set at ${M.fmt(car.nextOil)} km (+${M.fmt(interval)} km)`}`);
+};
+
+/* Editable Car Profile Modal (7,000 km Oil Cycle, No Fixed Fuel Budget) */
 M.acts['car-edit'] = () => {
   const ar = M.s.lang === 'ar';
-  const car = M.s.car || { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '', odo: 0, nextOil: 10000, kmDay: 40, fuelBudget: 5000, fuelUsed: 0 };
-  M.sheet.open(ar ? 'بيانات السيارة والصيانة' : 'Car Details & Maintenance', `
+  const car = M.s.car || { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '', odo: 0, oilInterval: 7000, nextOil: 7000 };
+  const oil = M.getCarOilStatus ? M.getCarOilStatus() : { odo: car.odo || 0, interval: 7000, nextOil: car.nextOil || 7000 };
+  M.sheet.open(ar ? 'بيانات السيارة وتغيير الزيت (كل 7,000 كم)' : 'Car & 7,000 km Oil Tracker', `
     <form class="manual-form" data-form="car-edit">
       <label>${ar ? 'نوع واسم السيارة' : 'Car Make & Model'}
         <input name="cn" required value="${M.L(car.n)}" autocomplete="off">
@@ -281,23 +345,17 @@ M.acts['car-edit'] = () => {
       </label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <label>${ar ? 'العداد الحالي (كم)' : 'Current Odometer (km)'}
-          <input name="odo" type="text" inputmode="numeric" value="${car.odo || 0}">
+          <input name="odo" type="text" inputmode="numeric" value="${oil.odo}">
         </label>
         <label>${ar ? 'تغيير الزيت القادم (كم)' : 'Next Oil Change (km)'}
-          <input name="nextOil" type="text" inputmode="numeric" value="${car.nextOil || 10000}">
+          <input name="nextOil" type="text" inputmode="numeric" value="${oil.nextOil}">
         </label>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <label>${ar ? 'ميزانية الوقود الشهرية' : 'Monthly Fuel Budget'}
-          <input name="fuelBudget" type="text" inputmode="numeric" value="${car.fuelBudget || 5000}">
-        </label>
-        <label>${ar ? 'المصروف من الوقود' : 'Fuel Used'}
-          <input name="fuelUsed" type="text" inputmode="numeric" value="${car.fuelUsed || 0}">
-        </label>
-      </div>
+      <div class="muted small">${ar ? 'دورة تغيير الزيت مضبوطة كل 7,000 كم، ويقوم الذكاء الاصطناعي بإرسال تنبيه شهري عند اقتراب الموعد.' : 'Oil change interval is set to every 7,000 km with monthly AI alerts.'}</div>
       <button class="btn" type="submit">${M.ico('check', 18, 2.5)} ${M.t('save')}</button>
     </form>
-    <button type="button" class="btn tonal" data-act="car-timeline" style="margin-top:4px">${M.t('timeline')}</button>
+    <button type="button" class="btn tonal" data-act="car-oil-reset" style="margin-top:6px">${M.ico('drop', 16, 2)} <span>${ar ? 'تم تغيير الزيت اليوم (ضبط +7,000 كم من العداد الحالي)' : 'Oil Changed Today (Set +7,000 km)'}</span></button>
+    <button type="button" class="btn plain" data-act="car-timeline" style="margin-top:4px">${M.t('timeline')}</button>
   `);
 };
 
@@ -306,53 +364,114 @@ M.saveCarEdit = f => {
   const name = (f.cn.value || '').trim() || (ar ? 'سيارة العائلة' : 'Family Car');
   const plate = (f.plate.value || '').trim();
   const odo = parseInt(M.toWesternDigits(String(f.odo.value || '0')), 10) || 0;
-  const nextOil = parseInt(M.toWesternDigits(String(f.nextOil.value || '10000')), 10) || (odo + 5000);
-  const fuelBudget = parseFloat(M.toWesternDigits(String(f.fuelBudget.value || '5000'))) || 5000;
-  const fuelUsed = parseFloat(M.toWesternDigits(String(f.fuelUsed.value || '0'))) || 0;
+  const oilInterval = 7000;
+  const rawNext = parseInt(M.toWesternDigits(String(f.nextOil.value || '0')), 10);
+  const nextOil = rawNext > odo ? rawNext : (odo + oilInterval);
   M.s.car = Object.assign({}, M.s.car, {
     n: { ar: name, en: name },
     plate,
     odo,
-    nextOil,
-    fuelBudget,
-    fuelUsed
+    oilInterval,
+    nextOil
   });
+  if (typeof M.syncCarOilItem === 'function') M.syncCarOilItem();
   if (M.api) {
     M.api.saveLocal(M.s);
-    M.api.updateCar({ car: M.s.car }).catch(() => {});
+    M.api.updateCar({ car: M.s.car, carItems: M.s.carItems }).catch(() => {});
   }
   M.sheet.close();
   M.render();
-  M.toast(`${M.ico('checkc', 16)} ${ar ? 'تم تحديث بيانات السيارة' : 'Car details updated'}`);
+  const oil = M.getCarOilStatus ? M.getCarOilStatus() : { dueThisMonth: false };
+  if (oil.dueThisMonth) {
+    setTimeout(() => M.triggerMonthlyAINotification(), 400);
+  }
+  M.toast(`${M.ico('checkc', 16)} ${ar ? 'تم تحديث عداد السيارة ومتابعة الـ 7,000 كم' : 'Car odometer & 7,000 km tracker updated'}`);
 };
 
 M.acts['car-timeline'] = () => {
-  const ar = M.s.lang === 'ar', kmU = M.t('km'), curU = M.t('cur');
-  const car = M.s.car || { odo: 0, nextOil: 10000 };
+  const ar = M.s.lang === 'ar', kmU = M.t('km');
+  const oil = M.getCarOilStatus ? M.getCarOilStatus() : { odo: 0, nextOil: 7000, interval: 7000 };
   const tl = [
-    [ar ? 'العداد الحالي' : 'Current Odometer', M.L(car.n), `${M.fmt(car.odo || 0)} ${kmU}`, true, '#0D9488'],
-    [ar ? 'الصيانة القادمة' : 'Next Oil Service', ar ? 'تغيير زيت + فلتر' : 'Oil + filter', `${M.fmt(car.nextOil || 10000)} ${kmU}`, false, '#F59E0B'],
-    ...(M.s.carItems || []).map(it => [ `${it.days} ${M.t('days')}`, M.L(it.n), M.L(it.s), false, it.c || '#3B82F6' ])
+    [ar ? 'العداد الحالي' : 'Current Odometer', M.L(M.s.car?.n || { ar: 'سيارة العائلة', en: 'Family Car' }), `${M.fmt(oil.odo)} ${kmU}`, true, '#0D9488'],
+    [ar ? 'تغيير الزيت القادم (كل 7,000 كم)' : 'Next Oil Change (Every 7,000 km)', ar ? 'زيت محرك + فلتر' : 'Engine oil + filter', `${M.fmt(oil.nextOil)} ${kmU}`, false, '#F59E0B'],
+    ...(M.s.carItems || []).filter(it => it.id !== 'oil').map(it => [ `${it.days} ${M.t('days')}`, M.L(it.n), M.L(it.s), false, it.c || '#3B82F6' ])
   ];
   M.sheet.open(M.t('timeline'), `<div class="tl">${tl.map(([d, n, m, done, c]) => `<div class="tl-i ${done ? 'done' : ''}" style="--tc:${c}"><b>${n}</b><p>${d} · ${m}</p></div>`).join('')}</div>`);
 };
 
 M.acts['car-item'] = el => {
-  const id = el.dataset.id, car = M.s.car || { fuelBudget: 5000, fuelUsed: 0, nextOil: 10000, odo: 0, kmDay: 40 };
+  const ar = M.s.lang === 'ar';
+  const id = el.dataset.id, car = M.s.car || { fuelUsed: 0 };
   if (id === 'fuel') {
-    const pct = car.fuelBudget > 0 ? Math.min(100, (car.fuelUsed / car.fuelBudget) * 100) : 0;
-    return M.sheet.open(M.t('fuelBudget'), `<div class="group"><div class="kv"><span>${M.t('fuelBudget')}</span><b>${M.money(car.fuelBudget)}</b></div>
-      <div class="kv"><span>${M.t('spent')}</span><b>${M.moneyNeg(car.fuelUsed)}</b></div></div>
-      <div class="bar" style="--bc:#06B6D4;height:12px;border-radius:6px"><i style="width:${pct}%"></i></div>
-      <button type="button" class="btn tonal" data-act="car-edit" style="margin-top:8px">${M.ico('pen', 15, 2)} <span>${M.s.lang === 'ar' ? 'تعديل ميزانية الوقود' : 'Edit Fuel Budget'}</span></button>`);
+    const carPurchs = (M.s.purchases || []).filter(p => p.cat === 'car');
+    const totalSpent = Math.max(Number(car.fuelUsed) || 0, carPurchs.reduce((a, p) => a + (Number(p.amount) || 0), 0));
+    return M.sheet.open(ar ? 'سجل تعبئة البنزين' : 'Petrol Fill-Up Log', `
+      <form class="manual-form" data-form="fuel-add" style="margin-bottom:8px">
+        <label>${ar ? 'اكتب سعر تعبئة البنزين (' + M.t('cur') + ')' : 'Enter Petrol Fill-Up Price (' + M.t('cur') + ')'}
+          <div style="display:flex;gap:8px">
+            <input name="fuelPrice" type="text" inputmode="decimal" required placeholder="${ar ? 'مثال: 1500' : 'e.g. 1500'}" style="flex:1" autocomplete="off">
+            <button class="btn sm" type="submit" style="height:44px;border-radius:11px;padding:0 16px">${M.ico('check', 15, 2.5)} <span>${ar ? 'حفظ' : 'Save'}</span></button>
+          </div>
+        </label>
+      </form>
+      <div class="group">
+        <div class="kv"><span>${ar ? 'إجمالي تعبئة البنزين هذا الشهر' : 'Total Petrol Filled This Month'}</span><b class="priv">${M.money(totalSpent)}</b></div>
+        <div class="kv"><span>${ar ? 'عدد مرات التعبئة' : 'Fill-ups Count'}</span><b>${carPurchs.length}</b></div>
+      </div>
+      ${carPurchs.length ? `<div class="group">${carPurchs.map(M.purchaseRow).join('')}</div>` : `<div class="muted small" style="text-align:center;padding:8px 0">${ar ? 'اكتب سعر تعبئة البنزين بالأعلى في كل مرة تملأ فيها الوقود ليتم تسجيلها وخصمها تلقائياً.' : 'Enter the petrol fill-up price above each time you refuel.'}</div>`}`);
   }
   const it = (M.s.carItems || []).find(x => x.id === id);
   if (!it) return;
+  const oil = M.getCarOilStatus ? M.getCarOilStatus() : { toOil: 7000, days: 30, nextOil: 7000, interval: 7000 };
   M.sheet.open(M.L(it.n), `
     <div style="text-align:center"><span class="tile" style="--c:${it.c};width:64px;height:64px;margin:auto">${M.ico(it.ico, 32)}</span>
-      <div style="font-size:40px;font-weight:700;margin-top:8px" class="num">${it.days}</div><div class="muted">${M.t('days')}</div></div>
+      <div style="font-size:40px;font-weight:700;margin-top:8px" class="num">${it.id === 'oil' ? `${M.fmt(oil.toOil)} ${M.t('km')}` : it.days}</div>
+      <div class="muted">${it.id === 'oil' ? (ar ? `متبقي لتغيير الزيت (دورة كل ${M.fmt(oil.interval)} كم)` : `Left until ${M.fmt(oil.interval)} km oil change`) : M.t('days')}</div></div>
     <div class="group"><div class="kv"><span>${M.L(it.n)}</span><b>${M.L(it.s)}</b></div>
-      <div class="kv"><span>${M.t('reminder')}</span><b>${M.t('reminderOn')}</b></div></div>
-    ${it.ai ? `<div class="ai-pill"><span class="spark">${M.ico('spark', 16, 2)}</span><span>${M.t('aiOdo')(M.fmt(Math.max(0, car.nextOil - car.odo)), Math.round(Math.max(0, car.nextOil - car.odo) / Math.max(1, car.kmDay || 40)))}</span></div>` : ''}
-    <button type="button" class="btn tonal" data-act="car-timeline">${M.t('timeline')}</button>`);
+      <div class="kv"><span>${M.t('reminder')}</span><b>${ar ? 'تنبيه الذكاء الاصطناعي الشهري مفعّل' : 'Monthly AI Alert Active'}</b></div></div>
+    ${it.ai ? `<div class="ai-pill"><span class="spark">${M.ico('spark', 16, 2)}</span><span>${M.t('aiOdo')(M.fmt(oil.toOil), oil.days)}</span></div>` : ''}
+    ${it.id === 'oil' ? `<button type="button" class="btn" data-act="car-oil-reset" style="margin-top:4px">${M.ico('check', 17, 2.4)} <span>${ar ? 'تم تغيير الزيت اليوم (ضبط +7,000 كم)' : 'Oil Changed Today (Set +7,000 km)'}</span></button>` : ''}
+    <button type="button" class="btn tonal" data-act="car-timeline" style="margin-top:6px">${M.t('timeline')}</button>`);
+};
+
+
+/* Direct Petrol Fill-Up Logger (Enter Price -> Deduct from Wallet & Add to Car Fuel Log) */
+M.saveFuelFillUp = f => {
+  const ar = M.s.lang === 'ar';
+  const raw = M.toWesternDigits(String(f.fuelPrice?.value || '')).replace(/[^\d.]/g, '');
+  const price = parseFloat(raw);
+  if (!(price > 0)) {
+    M.toast(ar ? 'يرجى كتابة سعر تعبئة البنزين' : 'Please enter the petrol fill-up price');
+    return;
+  }
+  const now = new Date();
+  const h = now.getHours() % 12 || 12;
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ampm = now.getHours() >= 12 ? 'PM' : 'AM';
+  const newP = {
+    id: Date.now(),
+    member: M.s.currentMemberId || 'abu',
+    merchant: { ar: 'تعبئة بنزين', en: 'Petrol Fill-Up' },
+    cat: 'car',
+    amount: price,
+    day: M.s.day || now.getDate() || 14,
+    time: `${h}:${mm} ${ampm}`,
+    scanned: false,
+    items: [{ n: { ar: 'تعبئة بنزين', en: 'Petrol Fill-Up' }, q: 1, p: price }]
+  };
+  if (!Array.isArray(M.s.purchases)) M.s.purchases = [];
+  M.s.purchases.unshift(newP);
+  M.s.car = M.s.car || { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '', odo: 0, oilInterval: 7000, nextOil: 7000, fuelUsed: 0 };
+  M.s.car.fuelUsed = (Number(M.s.car.fuelUsed) || 0) + price;
+  M.tickerNew = true;
+  if (M.api) {
+    M.api.saveLocal(M.s);
+    M.api.addPurchase(newP).catch(() => {});
+    M.api.updateCar({ car: M.s.car }).catch(() => {});
+  }
+  if (f.fuelPrice) f.fuelPrice.value = '';
+  if (M.sheet?.isOpen) M.sheet.close();
+  M.render();
+  M.checkThreshold();
+  M.toast(`${M.ico('fuel', 16, 2)} ${ar ? `تم تسجيل تعبئة البنزين: ${M.fmt(price)} ${M.t('cur')}` : `Logged petrol fill-up: ${M.fmt(price)} ${M.t('cur')}`}`);
 };
