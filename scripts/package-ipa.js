@@ -2,20 +2,20 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-console.log('--- Packaging Masrofi.ipa ---');
+console.log('--- Packaging Masrofi.ipa (Standard PKZIP) ---');
 
 const rootDir = path.resolve(__dirname, '..');
-const payloadDir = path.join(rootDir, 'Payload');
-const appDir = path.join(payloadDir, 'Masrofi.app');
+const tempRoot = path.join(rootDir, 'temp_ipa_root');
+const payloadDir = path.join(tempRoot, 'Payload');
+const appDir = path.join(payloadDir, 'App.app');
 const ipaOutput = path.join(rootDir, 'Masrofi.ipa');
 
-// 1. Clean previous build
-if (fs.existsSync(payloadDir)) fs.rmSync(payloadDir, { recursive: true, force: true });
+if (fs.existsSync(tempRoot)) fs.rmSync(tempRoot, { recursive: true, force: true });
 if (fs.existsSync(ipaOutput)) fs.unlinkSync(ipaOutput);
 
 fs.mkdirSync(appDir, { recursive: true });
 
-// 2. Copy Web Assets from www
+// 1. Copy Web Assets from www
 const wwwDir = path.join(rootDir, 'www');
 if (!fs.existsSync(wwwDir)) {
   execSync('node scripts/build.js', { cwd: rootDir, stdio: 'inherit' });
@@ -34,33 +34,42 @@ function copyRecursive(src, dest) {
   }
 }
 
-console.log('Copying application bundle...');
+console.log('Copying application files into App.app...');
 copyRecursive(wwwDir, path.join(appDir, 'public'));
 
-// 3. Copy iOS Info.plist & Assets
+// 2. Prepare Info.plist
 const plistSrc = path.join(rootDir, 'ios', 'App', 'App', 'Info.plist');
 if (fs.existsSync(plistSrc)) {
-  fs.copyFileSync(plistSrc, path.join(appDir, 'Info.plist'));
+  let plist = fs.readFileSync(plistSrc, 'utf8');
+  plist = plist.replace(/\$\(EXECUTABLE_NAME\)/g, 'App');
+  plist = plist.replace(/\$\(PRODUCT_BUNDLE_IDENTIFIER\)/g, 'com.masrofi.app');
+  plist = plist.replace(/\$\(PRODUCT_NAME\)/g, 'Masrofi');
+  plist = plist.replace(/\$\(CURRENT_PROJECT_VERSION\)/g, '1.0.0');
+  plist = plist.replace(/\$\(MARKETING_VERSION\)/g, '1.0.0');
+  fs.writeFileSync(path.join(appDir, 'Info.plist'), plist, 'utf8');
 }
 
+// 3. Icons
 const iconSrc = path.join(rootDir, 'icons', 'icon-512.png');
 if (fs.existsSync(iconSrc)) {
   fs.copyFileSync(iconSrc, path.join(appDir, 'AppIcon60x60@2x.png'));
   fs.copyFileSync(iconSrc, path.join(appDir, 'AppIcon60x60@3x.png'));
-  fs.copyFileSync(iconSrc, path.join(appDir, 'AppIcon76x76@2x~ipad.png'));
 }
 
-// 4. Create ZIP archive named Masrofi.ipa using tar.exe
-console.log('Compressing into Masrofi.ipa using tar.exe...');
-try {
-  if (fs.existsSync(ipaOutput)) fs.unlinkSync(ipaOutput);
-  execSync(`tar.exe -a -cf "${ipaOutput}" Payload`, { cwd: rootDir, stdio: 'inherit' });
-  console.log(`✓ Masrofi.ipa created successfully at: ${ipaOutput}`);
-} catch (err) {
-  console.error('Failed to compress IPA:', err.message);
+// 4. Compress using .NET ZipFile to produce authentic PKZIP
+console.log('Compressing with authentic PKZIP headers...');
+const psScript = `Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory('${tempRoot.replace(/\\/g, '/')}', '${ipaOutput.replace(/\\/g, '/')}')`;
+execSync(`powershell -NoProfile -Command "${psScript}"`, { cwd: rootDir, stdio: 'inherit' });
+
+// Copy to masrofi-fullstack as well
+const subDirIpa = path.join(rootDir, 'masrofi-fullstack', 'Masrofi.ipa');
+if (fs.existsSync(path.dirname(subDirIpa))) {
+  fs.copyFileSync(ipaOutput, subDirIpa);
 }
 
-// Clean temporary Payload folder
-if (fs.existsSync(payloadDir)) {
-  fs.rmSync(payloadDir, { recursive: true, force: true });
+console.log(`✓ Masrofi.ipa created successfully at: ${ipaOutput}`);
+
+// Clean temp directory
+if (fs.existsSync(tempRoot)) {
+  fs.rmSync(tempRoot, { recursive: true, force: true });
 }

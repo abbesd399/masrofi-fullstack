@@ -34,22 +34,49 @@ jobs:
 
       - name: Build iOS Application (.app)
         run: |
-          xcodebuild build \
+          mkdir -p build
+          if ! xcodebuild archive \
             -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Release \
             -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/build/App.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            BUILD_DIR=build
+            CODE_SIGN_IDENTITY=""; then
+              echo "xcodebuild archive returned non-zero, falling back to xcodebuild build with derivedDataPath..."
+              xcodebuild build \
+                -project ios/App/App.xcodeproj \
+                -scheme App \
+                -configuration Release \
+                -destination 'generic/platform=iOS' \
+                -derivedDataPath "$PWD/build/DerivedData" \
+                CODE_SIGNING_ALLOWED=NO \
+                CODE_SIGNING_REQUIRED=NO \
+                CODE_SIGN_IDENTITY=""
+          fi
 
       - name: Package Masrofi.ipa
         run: |
+          APP_PATH=$(find build -name "*.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: No .app bundle found in build folder!"
+            find build -maxdepth 4
+            exit 1
+          fi
+          echo "Found compiled iOS app bundle at: $APP_PATH"
+          if [ ! -f "$APP_PATH/App" ]; then
+            echo "Error: Native executable $APP_PATH/App is missing!"
+            ls -la "$APP_PATH"
+            exit 1
+          fi
+          file "$APP_PATH/App"
           mkdir -p Payload
-          cp -r build/Release-iphoneos/App.app Payload/
+          cp -r "$APP_PATH" Payload/
           zip -qr Masrofi.ipa Payload
-          echo "Masrofi.ipa created successfully!"
+          echo "=== Verifying Payload/App.app contents ==="
+          ls -la Payload/App.app
+          echo "=== Masrofi.ipa created successfully ==="
           ls -lh Masrofi.ipa
 
       - name: Upload IPA Artifact
