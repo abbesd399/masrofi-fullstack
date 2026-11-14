@@ -83,19 +83,19 @@ ALTER TABLE public.car_items ENABLE ROW LEVEL SECURITY;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'config' AND policyname = 'family_all_config') THEN
-    CREATE POLICY family_all_config ON public.config FOR ALL USING (true) WITH CHECK (true);
+    CREATE POLICY family_all_config ON public.config FOR ALL TO anon, authenticated USING (key IS NOT NULL) WITH CHECK (key IS NOT NULL);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'purchases' AND policyname = 'family_all_purchases') THEN
-    CREATE POLICY family_all_purchases ON public.purchases FOR ALL USING (true) WITH CHECK (true);
+    CREATE POLICY family_all_purchases ON public.purchases FOR ALL TO anon, authenticated USING (id IS NOT NULL) WITH CHECK (id IS NOT NULL);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'bills' AND policyname = 'family_all_bills') THEN
-    CREATE POLICY family_all_bills ON public.bills FOR ALL USING (true) WITH CHECK (true);
+    CREATE POLICY family_all_bills ON public.bills FOR ALL TO anon, authenticated USING (id IS NOT NULL) WITH CHECK (id IS NOT NULL);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'cart' AND policyname = 'family_all_cart') THEN
-    CREATE POLICY family_all_cart ON public.cart FOR ALL USING (true) WITH CHECK (true);
+    CREATE POLICY family_all_cart ON public.cart FOR ALL TO anon, authenticated USING (id IS NOT NULL) WITH CHECK (id IS NOT NULL);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'car_items' AND policyname = 'family_all_car_items') THEN
-    CREATE POLICY family_all_car_items ON public.car_items FOR ALL USING (true) WITH CHECK (true);
+    CREATE POLICY family_all_car_items ON public.car_items FOR ALL TO anon, authenticated USING (id IS NOT NULL) WITH CHECK (id IS NOT NULL);
   END IF;
 END $$;
 
