@@ -73,8 +73,23 @@ M.afterHome = () => {
 };
 
 /* ── home actions & sheets ── */
-M.acts['banner-hide'] = (el, ev) => { ev.stopPropagation(); M.s.bannerHidden = true; M.render(); };
-M.acts['banner-show'] = () => { M.s.bannerHidden = false; M.render(); };
+M.acts['banner-hide'] = (el, ev) => {
+  ev.stopPropagation();
+  M.s.bannerHidden = true;
+  if (M.api) {
+    M.api.saveLocal(M.s);
+    M.api.updateConfig({ bannerHidden: true }).catch(() => {});
+  }
+  M.render();
+};
+M.acts['banner-show'] = () => {
+  M.s.bannerHidden = false;
+  if (M.api) {
+    M.api.saveLocal(M.s);
+    M.api.updateConfig({ bannerHidden: false }).catch(() => {});
+  }
+  M.render();
+};
 M.acts['banner-open'] = () => {
   const unpaid = M.s.bills.filter(b => !b.paid).sort((a, b) => a.due - b.due);
   M.sheet.open(M.t('alertTitle'), `

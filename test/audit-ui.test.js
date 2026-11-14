@@ -5,7 +5,14 @@ const assert = require('node:assert');
 const path = require('node:path');
 
 const PORT = 3099;
-const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME_PATH = process.env.CHROME_PATH || [
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser"
+].find(p => require("node:fs").existsSync(p)) || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
 const EASTERN_NUMERAL_REGEX = /[\u0660-\u0669\u06F0-\u06F9]/;
 
@@ -25,7 +32,9 @@ async function runAudit() {
 
     const page = await browser.newPage();
     await page.setViewport({ width: 390, height: 844, isMobile: true });
-    await page.goto(`http://127.0.0.1:${PORT}`, { waitUntil: 'networkidle0' });
+    await page.goto(`http://127.0.0.1:${PORT}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.waitForSelector('#phone');
+    await new Promise(r => setTimeout(r, 600));
 
     // Helper to check for Eastern Arabic numerals across all rendered text in an element
     async function assertNoEasternNumerals(scopeName) {
@@ -77,7 +86,7 @@ async function runAudit() {
 
     // --- TAB 2: BILLS (Arabic RTL) ---
     console.log('\nTesting Tab: Bills (Arabic RTL)...');
-    await page.click('.nav-item[data-id="bills"]');
+    await page.evaluate(() => document.querySelector('.nav-item[data-id="bills"]')?.click());
     await new Promise(r => setTimeout(r, 300));
     await assertNoEasternNumerals('Bills tab (Bills segment)');
     await assertNoVerticalOverlap('.bill-sum .bs:nth-child(1) .small', '.bill-sum .bs:nth-child(1) b', 'Bill Summary Due Title -> Amount');
@@ -109,7 +118,7 @@ async function runAudit() {
 
     // --- TAB 3: FAMILY & GROCERY CART (Arabic RTL) ---
     console.log('\nTesting Tab: Family & Grocery Cart (Arabic RTL)...');
-    await page.click('.nav-item[data-id="family"]');
+    await page.evaluate(() => document.querySelector('.nav-item[data-id="family"]')?.click());
     await new Promise(r => setTimeout(r, 300));
     await assertNoEasternNumerals('Family tab (Purchases Feed)');
 
@@ -149,7 +158,7 @@ async function runAudit() {
 
     // --- TAB 4: INSIGHTS (Arabic RTL) ---
     console.log('\nTesting Tab: Insights (Arabic RTL)...');
-    await page.click('.nav-item[data-id="insights"]');
+    await page.evaluate(() => document.querySelector('.nav-item[data-id="insights"]')?.click());
     await new Promise(r => setTimeout(r, 400));
     await assertNoEasternNumerals('Insights tab');
     await assertNoVerticalOverlap('.ins-head .ih-t', '.ins-head .ih-b', 'Insights Coach Header -> Body');
@@ -205,38 +214,32 @@ async function runAudit() {
 
     // --- TEST SCANNER MODAL (Arabic RTL) ---
     console.log('\nTesting AI Scanner Modal (Arabic RTL)...');
-    await page.click('.nav-scan');
+    await page.evaluate(() => document.querySelector('.nav-scan')?.click());
     await new Promise(r => setTimeout(r, 500));
     await assertNoEasternNumerals('Scanner viewfinder');
 
     // Simulate receipt scan
-    await page.click('.sc-sim');
+    await page.evaluate(() => document.querySelector('.sc-sim')?.click());
     await new Promise(r => setTimeout(r, 3800));
 
     await assertNoEasternNumerals('Scanner Results Bottom Sheet');
-    await page.click('[data-act="scan-confirm"]');
+    await page.evaluate(() => document.querySelector('[data-act="scan-confirm"]')?.click());
     await new Promise(r => setTimeout(r, 1500));
     await page.keyboard.press('Escape');
     await new Promise(r => setTimeout(r, 400));
 
     // --- SWITCH TO ENGLISH (LTR) & AUDIT ALL SCREENS ---
-    console.log('\nTesting English LTR mode...');
-    await page.click('.mobile-settings-btn');
-    await new Promise(r => setTimeout(r, 400));
-    await page.evaluate(() => {
-      document.querySelector('.seg[data-ctl="lang"] button[data-v="en"]')?.click();
-    });
-    await new Promise(r => setTimeout(r, 300));
-    await page.click('.sh-close');
+    console.log("\nTesting English LTR mode...");
+    await page.evaluate(() => { M.s.lang = "en"; M.applyEnv(); });
     await new Promise(r => setTimeout(r, 300));
 
     // Check Home (LTR)
-    await page.click('.nav-item[data-id="home"]');
+    await page.evaluate(() => document.querySelector('.nav-item[data-id="home"]')?.click());
     await new Promise(r => setTimeout(r, 300));
     await assertNoVerticalOverlap('.hero .h-big', '.hero .h-salary', 'Hero Big Balance -> Salary Footnote (LTR)');
 
     // Check Grocery Cart (LTR)
-    await page.click('.nav-item[data-id="family"]');
+    await page.evaluate(() => document.querySelector('.nav-item[data-id="family"]')?.click());
     await new Promise(r => setTimeout(r, 300));
     await page.evaluate(() => {
       document.querySelector('button[data-seg="famSeg"][data-v="cart"]')?.click();

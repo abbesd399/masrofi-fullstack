@@ -1,4 +1,4 @@
-const CACHE_NAME = 'masrofi-cache-v1';
+const CACHE_NAME = 'masrofi-cache-v3';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const STATIC_ASSETS = [
   './css/refresh.css',
   './js/i18n.js',
   './js/data.js',
+  './js/config.js',
   './js/api.js',
   './js/icons.js',
   './js/ui.js',
@@ -46,7 +47,6 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // For API endpoints, prefer network, fall back to failure handled by app's localStorage sync
   if (url.pathname.startsWith('/api')) {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -59,22 +59,22 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // For static assets, use cache-first strategy with network fallback
-  event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
+  if (event.request.method === 'GET') {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        if (response && response.status === 200 && response.type === 'basic') {
+          const toCache = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, toCache));
         }
-        const toCache = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, toCache));
         return response;
       }).catch(() => {
-        if (event.request.headers.get('accept')?.includes('text/html')) {
-          return caches.match('./index.html');
-        }
-      });
-    })
-  );
+        return caches.match(event.request).then(cached => {
+          if (cached) return cached;
+          if (event.request.headers.get('accept')?.includes('text/html')) {
+            return caches.match('./index.html');
+          }
+        });
+      })
+    );
+  }
 });

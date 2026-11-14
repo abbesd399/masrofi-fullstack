@@ -42,3 +42,6 @@ test/*.png
 *.log
 npm-debug.log*
 .env
+
+# Nested clone
+masrofi-fullstack/

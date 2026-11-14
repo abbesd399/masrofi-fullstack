@@ -110,9 +110,6 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .device[data-os=android] .hw-b{right:-3px;top:320px;height:56px;background:#1f2623}
 .device[data-os=android] .hw-c,.device[data-os=android] .hw-d{display:none}
 
-/* Desktop settings icon hidden when panel is visible */
-.mobile-settings-btn{display:none}
-
 /* ───────── True Multi-Device Responsive Mobile Adaptation ───────── */
 @media (max-width:899px), (display-mode:standalone) {
   html,body{
@@ -184,9 +181,6 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
   .sheet{
     padding-bottom:max(16px, env(safe-area-inset-bottom, 0px)) !important;
   }
-  .mobile-settings-btn{
-    display:grid !important;
-  }
 }
 
 /* Standalone / native mobile class overrides */
@@ -243,8 +237,4 @@ body.native-app .scroll{
 body.is-mobile .sheet,
 body.native-app .sheet{
   padding-bottom:max(16px, env(safe-area-inset-bottom, 0px)) !important;
-}
-body.is-mobile .mobile-settings-btn,
-body.native-app .mobile-settings-btn{
-  display:grid !important;
 }

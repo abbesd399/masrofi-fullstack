@@ -52,6 +52,15 @@ M.STR = {
     notifApp: 'مصروفي', now: 'الآن', gotIt: 'حسناً', viewBills: 'عرض الفواتير', reservedAuto: 'محجوز تلقائياً',
     settings: 'الإعدادات', designSystem: 'نظام التصميم', theme: 'المظهر', langDir: 'اللغة والاتجاه', resetDemo: 'إعادة ضبط البيانات التوضيحية', light: 'فاتح', dark: 'داكن',
     camera: 'الكاميرا', gallery: 'معرض الصور', cameraError: 'تعذر فتح الكاميرا',
+    cloudSetup: 'الربط السحابي (Supabase) والذكاء الاصطناعي',
+    cloudSub: 'مزامنة فورية (Realtime) لجميع أفراد العائلة + قراءة الإيصالات بالذكاء الاصطناعي المجاني',
+    supaUrl: 'رابط مشروع Supabase (Project URL)',
+    supaKey: 'مفتاح Supabase العام (Anon Public Key)',
+    aiProvider: 'مزود الذكاء الاصطناعي المجاني',
+    aiKey: 'مفتاح API للذكاء الاصطناعي (اختياري)',
+    saveConnect: 'حفظ وتفعيل الربط الفوري',
+    cloudSaved: 'تم حفظ إعدادات الربط وتفعيل المزامنة الفورية',
+    rtSyncToast: 'تحديث فوري من محفظة العائلة',
   },
   en: {
     cur: 'DZD', hello: 'Good evening, Abu Khalid', homeT: 'Home', billsT: 'Bills & Car', familyT: 'Family Wallet', insightsT: 'AI Coach',
@@ -95,6 +104,15 @@ M.STR = {
     notifApp: 'MASROFI', now: 'now', gotIt: 'Got it', viewBills: 'View bills', reservedAuto: 'Auto-reserved',
     settings: 'Settings', designSystem: 'Design system', theme: 'Theme', langDir: 'Language & direction', resetDemo: 'Reset demo data', light: 'Light', dark: 'Dark',
     camera: 'Camera', gallery: 'Photo library', cameraError: 'Could not access camera',
+    cloudSetup: 'Cloud Realtime (Supabase) & Free AI',
+    cloudSub: 'Instant family Realtime sync + free AI receipt & bill OCR',
+    supaUrl: 'Supabase Project URL',
+    supaKey: 'Supabase Anon Public Key',
+    aiProvider: 'Free AI Provider',
+    aiKey: 'AI API Key (Optional)',
+    saveConnect: 'Save & Connect Realtime',
+    cloudSaved: 'Cloud & AI settings saved and Realtime activated',
+    rtSyncToast: 'Live family wallet update',
   }
 };
 M.t = k => {

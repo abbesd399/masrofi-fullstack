@@ -1,6 +1,13 @@
 /**
  * Scanner AI Service: Extract & Auto-Route Receipts and Utility/Car Bills
+ * Supports:
+ *   1. Official Free Google Gemini Vision API (gemini-2.5-flash)
+ *   2. Official Free Groq Vision API (meta-llama/llama-4-scout-17b-16e-instruct)
+ *   3. OpenRouter Free Vision Models (google/gemini-2.0-flash-exp:free)
+ *   4. Instant Offline Algerian Receipt/Bill Smart Heuristic Engine (Zero-downtime fallback)
  */
+
+const { jsonRequest } = require('./supabase');
 
 const BILL_SAMPLES = [
   {
@@ -81,9 +88,108 @@ function parseMultipartBuffer(buffer, boundary) {
   return result;
 }
 
+/**
+ * Call free AI Vision / LLM API (Gemini 2.5 Flash / Groq / OpenRouter) when configured
+ * and an image or OCR text is provided. Never throws: falls back to local parser on any error.
+ */
+async function analyzeWithFreeAI(body, aiCfg) {
+  if (!aiCfg || !aiCfg.aiConfigured || !aiCfg.aiApiKey) return null;
+  const hasRealImage = typeof body.image === 'string' && body.image.startsWith('data:image/') && body.image.length > 200;
+  const hasText = Boolean(body.text || body.ocrText);
+  if (!hasRealImage && !hasText) return null;
+
+  const mode = body.mode || 'receipt';
+  const sysPrompt = `You are Masrofi AI, an Algerian family finance receipt and bill parser.
+Extract details from the provided ${mode === 'bill' ? 'utility/car bill' : 'purchase receipt'} and return ONLY a valid JSON object with no markdown fences:
+If mode is "receipt":
+{
+  "mode": "receipt",
+  "merchant": { "ar": "Arabic store name", "en": "English/French store name" },
+  "cat": "groceries" | "car" | "utilities" | "home" | "family" | "dining" | "health" | "net",
+  "amount": 3450,
+  "day": 10,
+  "items": [{ "n": { "ar": "اسم الصنف", "en": "Item name" }, "q": 1, "p": 3450 }]
+}
+If mode is "bill":
+{
+  "mode": "bill",
+  "targetId": "elec" | "water" | "ins2" | "custom",
+  "kind": "var" | "fixed",
+  "cat": "utilities" | "car" | "net" | "family",
+  "biller": { "ar": "اسم الجهة بالعربية", "en": "Biller name in English" },
+  "amount": 7200,
+  "dueDay": 18,
+  "isCurrentMonth": true,
+  "dueText": { "ar": "18 نوفمبر 2026", "en": "Nov 18, 2026" }
+}`;
+
+  try {
+    const provider = (aiCfg.aiProvider || 'gemini').toLowerCase();
+    let rawJsonText = '';
+
+    if (provider === 'gemini') {
+      const model = aiCfg.aiModel || 'gemini-2.5-flash';
+      const parts = [{ text: sysPrompt + (hasText ? `\nOCR Text: ${body.text || body.ocrText}` : '') }];
+      if (hasRealImage) {
+        const commaIdx = body.image.indexOf(',');
+        const meta = body.image.slice(5, commaIdx);
+        const mimeType = meta.split(';')[0] || 'image/jpeg';
+        const base64Data = body.image.slice(commaIdx + 1);
+        parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
+      }
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(aiCfg.aiApiKey)}`;
+      const res = await jsonRequest(url, {
+        method: 'POST',
+        body: {
+          contents: [{ parts }],
+          generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
+        }
+      });
+      if (res.ok && res.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        rawJsonText = res.data.candidates[0].content.parts[0].text;
+      }
+    } else {
+      // OpenAI-compatible Vision endpoint (Groq or OpenRouter)
+      const isGroq = provider === 'groq';
+      const endpoint = isGroq
+        ? 'https://api.groq.com/openai/v1/chat/completions'
+        : 'https://openrouter.ai/api/v1/chat/completions';
+      const model = aiCfg.aiModel || (isGroq ? 'meta-llama/llama-4-scout-17b-16e-instruct' : 'google/gemini-2.0-flash-exp:free');
+      const userContent = [{ type: 'text', text: sysPrompt + (hasText ? `\nOCR Text: ${body.text || body.ocrText}` : '') }];
+      if (hasRealImage) {
+        userContent.push({ type: 'image_url', image_url: { url: body.image } });
+      }
+      const res = await jsonRequest(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${aiCfg.aiApiKey}` },
+        body: {
+          model,
+          temperature: 0.1,
+          messages: [{ role: 'user', content: userContent }]
+        }
+      });
+      if (res.ok && res.data?.choices?.[0]?.message?.content) {
+        rawJsonText = res.data.choices[0].message.content;
+      }
+    }
+
+    if (rawJsonText) {
+      const cleaned = rawJsonText.replace(/```json|```/gi, '').trim();
+      const parsedAi = JSON.parse(cleaned);
+      if (parsedAi && Number(parsedAi.amount) > 0) {
+        return parsedAi;
+      }
+    }
+  } catch (err) {
+    console.warn('[Scanner AI] Cloud AI call failed, using local smart parser:', err.message);
+  }
+  return null;
+}
+
 function parseScanRequest(body) {
   let mode = body.mode || body.type || 'receipt';
   let sampleIdx = Number(body.sampleIdx !== undefined ? body.sampleIdx : 0);
+  const customId = body.id !== undefined && !isNaN(body.id) ? Number(body.id) : undefined;
 
   // Extract text safely from various potential fields without [object Object] serialization
   let rawText = '';
@@ -160,19 +266,20 @@ function parseScanRequest(body) {
     const samp = BILL_SAMPLES[sampleIdx] || BILL_SAMPLES[0];
     const amount = extractedAmount !== null ? extractedAmount : samp.amount;
     return {
+      id: customId,
       mode: 'bill',
       sampleIdx,
       sample: samp,
       extracted: {
         biller: body.biller || samp.biller,
-        kind: samp.kind,
+        kind: body.kind || samp.kind,
         amount,
-        dueDay: samp.dueDay || 18,
-        dueText: samp.dueText,
-        cat: samp.cat,
-        isCurrentMonth: samp.isCurrentMonth,
-        targetId: samp.targetId,
-        autoDest: samp.isCurrentMonth ? 'month' : 'sched'
+        dueDay: body.dueDay || samp.dueDay || 18,
+        dueText: body.dueText || samp.dueText,
+        cat: body.cat || samp.cat,
+        isCurrentMonth: body.isCurrentMonth !== undefined ? Boolean(body.isCurrentMonth) : samp.isCurrentMonth,
+        targetId: body.targetId || samp.targetId,
+        autoDest: (body.isCurrentMonth !== undefined ? Boolean(body.isCurrentMonth) : samp.isCurrentMonth) ? 'month' : 'sched'
       }
     };
   }
@@ -225,6 +332,7 @@ function parseScanRequest(body) {
   ];
 
   return {
+    id: customId,
     mode: 'receipt',
     sampleIdx: 0,
     extracted: {
@@ -263,6 +371,7 @@ function routeAndPersist(db, parsed) {
     return {
       type: 'receipt',
       action: 'purchases_add',
+      targetId: newPurch.id,
       record: newPurch,
       extracted
     };
@@ -300,6 +409,7 @@ function routeAndPersist(db, parsed) {
     return {
       type: 'bill',
       action: 'bill_update',
+      targetId: updatedBill.id,
       record: updatedBill,
       extracted
     };
@@ -307,8 +417,9 @@ function routeAndPersist(db, parsed) {
 
   // Case B: Future/car bill (e.g. SAA insurance renewal)
   // Automatically save into `scheduled` and `carItems`!
+  const targetId = extracted.targetId || 'ins2';
   const schedBill = db.saveBill({
-    id: extracted.targetId || 'ins2',
+    id: targetId,
     n: extracted.biller,
     cat: extracted.cat,
     amount: extracted.amount,
@@ -322,9 +433,9 @@ function routeAndPersist(db, parsed) {
   // Also add or update car item
   const currentCarItems = db.getState().carItems;
   const amtFormatted = Number(extracted.amount).toLocaleString('en-US');
-  const existingCarIdx = currentCarItems.findIndex(ci => ci.id === 'ins2');
+  const existingCarIdx = currentCarItems.findIndex(ci => ci.id === targetId);
   const carItemEntry = {
-    id: 'ins2',
+    id: targetId,
     ico: 'shield',
     c: '#EC4899',
     n: { ar: 'تأمين أكسنت (أم خالد)', en: 'Accent insurance (Umm Khalid)' },
@@ -343,6 +454,7 @@ function routeAndPersist(db, parsed) {
   return {
     type: 'bill',
     action: 'scheduled_and_car_add',
+    targetId,
     record: schedBill,
     extracted
   };
@@ -352,5 +464,6 @@ module.exports = {
   BILL_SAMPLES,
   parseScanRequest,
   parseMultipartBuffer,
+  analyzeWithFreeAI,
   routeAndPersist
 };

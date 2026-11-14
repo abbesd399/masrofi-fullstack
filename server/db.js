@@ -1,4 +1,10 @@
-const { DatabaseSync } = require('node:sqlite');
+let DatabaseSync = null;
+try {
+  ({ DatabaseSync } = require('node:sqlite'));
+} catch {
+  DatabaseSync = null;
+}
+
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -7,6 +13,285 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 const DB_PATH = path.join(DATA_DIR, 'masrofi.sqlite');
+
+/**
+ * Fallback synchronous SQLite-compatible storage engine for Node.js < 22.5
+ * where experimental `node:sqlite` is not built-in. Implements the exact
+ * `exec()` and `prepare().get()/all()/run()` API used by MasrofiDB, backed
+ * by atomic disk persistence (`masrofi.sqlite.json`).
+ */
+class FallbackDatabaseSync {
+  constructor(dbPath) {
+    this.filePath = dbPath + '.json';
+    this.tables = {
+      config: {},
+      purchases: [],
+      bills: [],
+      cart: [],
+      car_items: []
+    };
+    this._txBackup = null;
+    this._load();
+  }
+
+  _load() {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        const raw = fs.readFileSync(this.filePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          this.tables = Object.assign({
+            config: {},
+            purchases: [],
+            bills: [],
+            cart: [],
+            car_items: []
+          }, parsed);
+        }
+      }
+    } catch {
+      // Start fresh if corrupted
+    }
+  }
+
+  _save() {
+    if (this._txBackup !== null) return;
+    try {
+      const tmp = this.filePath + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(this.tables), 'utf8');
+      fs.renameSync(tmp, this.filePath);
+    } catch {
+      // Ignore write error in read-only edge cases
+    }
+  }
+
+  exec(sql) {
+    const s = sql.trim();
+    if (/^BEGIN/i.test(s)) {
+      this._txBackup = JSON.stringify(this.tables);
+      return;
+    }
+    if (/^COMMIT/i.test(s)) {
+      this._txBackup = null;
+      this._save();
+      return;
+    }
+    if (/^ROLLBACK/i.test(s)) {
+      if (this._txBackup !== null) {
+        this.tables = JSON.parse(this._txBackup);
+        this._txBackup = null;
+      }
+      return;
+    }
+    if (/DELETE\s+FROM\s+config/i.test(s)) this.tables.config = {};
+    if (/DELETE\s+FROM\s+purchases/i.test(s)) this.tables.purchases = [];
+    if (/DELETE\s+FROM\s+bills/i.test(s)) this.tables.bills = [];
+    if (/DELETE\s+FROM\s+cart/i.test(s)) this.tables.cart = [];
+    if (/DELETE\s+FROM\s+car_items/i.test(s)) this.tables.car_items = [];
+    this._save();
+  }
+
+  prepare(sql) {
+    const q = sql.replace(/\s+/g, ' ').trim();
+    const self = this;
+
+    return {
+      get(...params) {
+        if (/^SELECT val FROM config WHERE key = \?/i.test(q)) {
+          const k = String(params[0]);
+          return Object.prototype.hasOwnProperty.call(self.tables.config, k)
+            ? { val: self.tables.config[k] }
+            : undefined;
+        }
+        if (/^SELECT \* FROM bills WHERE id = \?/i.test(q)) {
+          const id = String(params[0]);
+          const found = self.tables.bills.find(r => String(r.id) === id);
+          return found ? { ...found } : undefined;
+        }
+        if (/^SELECT \* FROM cart WHERE id = \?/i.test(q)) {
+          const id = String(params[0]);
+          const found = self.tables.cart.find(r => String(r.id) === id);
+          return found ? { ...found } : undefined;
+        }
+        if (/^SELECT \* FROM car_items WHERE id = \?/i.test(q)) {
+          const id = String(params[0]);
+          const found = self.tables.car_items.find(r => String(r.id) === id);
+          return found ? { ...found } : undefined;
+        }
+        return undefined;
+      },
+
+      all() {
+        if (/^SELECT \* FROM purchases/i.test(q)) {
+          return [...self.tables.purchases].sort((a, b) => (b.created_at - a.created_at) || (b.id - a.id));
+        }
+        if (/^SELECT \* FROM bills/i.test(q)) {
+          return [...self.tables.bills];
+        }
+        if (/^SELECT \* FROM cart/i.test(q)) {
+          return [...self.tables.cart].sort((a, b) => (b.created_at - a.created_at) || (b.id - a.id));
+        }
+        if (/^SELECT \* FROM car_items/i.test(q)) {
+          return [...self.tables.car_items].sort((a, b) => (a.sort_order - b.sort_order) || (a.days - b.days));
+        }
+        return [];
+      },
+
+      run(...params) {
+        // config insert/upsert
+        if (/^INSERT INTO config/i.test(q)) {
+          const [key, val] = params;
+          self.tables.config[String(key)] = val;
+          self._save();
+          return { changes: 1 };
+        }
+        // purchases insert/upsert
+        if (/^INSERT INTO purchases/i.test(q)) {
+          const [id, member, merchant_ar, merchant_en, cat, amount, day, time, scanned, items, created_at] = params;
+          const row = { id, member, merchant_ar, merchant_en, cat, amount, day, time, scanned, items, created_at };
+          const idx = self.tables.purchases.findIndex(r => String(r.id) === String(id));
+          if (idx >= 0) self.tables.purchases[idx] = row;
+          else self.tables.purchases.push(row);
+          self._save();
+          return { changes: 1 };
+        }
+        // purchases delete
+        if (/^DELETE FROM purchases WHERE id = \?/i.test(q)) {
+          const id = String(params[0]);
+          const before = self.tables.purchases.length;
+          self.tables.purchases = self.tables.purchases.filter(r => String(r.id) !== id);
+          const changes = before - self.tables.purchases.length;
+          self._save();
+          return { changes };
+        }
+        // bills insert/upsert
+        if (/^INSERT INTO bills/i.test(q)) {
+          const [
+            id, name_ar, name_en, cat, amount, prev_amount, due, paid, paid_day,
+            kind, scanned, is_scheduled, due_str_ar, due_str_en, rem_str_ar, rem_str_en
+          ] = params;
+          const idx = self.tables.bills.findIndex(r => String(r.id) === String(id));
+          const existing = idx >= 0 ? self.tables.bills[idx] : null;
+          const row = {
+            id, name_ar, name_en, cat, amount,
+            prev_amount: prev_amount !== null && prev_amount !== undefined ? prev_amount : (existing ? existing.prev_amount : null),
+            due: due !== null && due !== undefined ? due : (existing ? existing.due : null),
+            paid, paid_day, kind, scanned, is_scheduled,
+            due_str_ar, due_str_en, rem_str_ar, rem_str_en
+          };
+          if (idx >= 0) self.tables.bills[idx] = row;
+          else self.tables.bills.push(row);
+          self._save();
+          return { changes: 1 };
+        }
+        // bills update
+        if (/^UPDATE bills SET/i.test(q)) {
+          const [
+            name_ar, name_en, cat, amount, prev_amount, due, paid, paid_day,
+            kind, scanned, is_scheduled, due_str_ar, due_str_en, rem_str_ar, rem_str_en, id
+          ] = params;
+          const idx = self.tables.bills.findIndex(r => String(r.id) === String(id));
+          if (idx < 0) return { changes: 0 };
+          self.tables.bills[idx] = {
+            id: self.tables.bills[idx].id,
+            name_ar, name_en, cat, amount, prev_amount, due, paid, paid_day,
+            kind, scanned, is_scheduled, due_str_ar, due_str_en, rem_str_ar, rem_str_en
+          };
+          self._save();
+          return { changes: 1 };
+        }
+        // bills delete
+        if (/^DELETE FROM bills WHERE id = \?/i.test(q)) {
+          const id = String(params[0]);
+          const before = self.tables.bills.length;
+          self.tables.bills = self.tables.bills.filter(r => String(r.id) !== id);
+          const changes = before - self.tables.bills.length;
+          self._save();
+          return { changes };
+        }
+        // cart insert/upsert
+        if (/^INSERT INTO cart/i.test(q)) {
+          const [id, name_ar, name_en, qVal, p, got, created_at] = params;
+          const row = { id, name_ar, name_en, q: qVal, p, got, created_at };
+          const idx = self.tables.cart.findIndex(r => String(r.id) === String(id));
+          if (idx >= 0) self.tables.cart[idx] = row;
+          else self.tables.cart.push(row);
+          self._save();
+          return { changes: 1 };
+        }
+        // cart update
+        if (/^UPDATE cart SET/i.test(q)) {
+          const [name_ar, name_en, qVal, p, got, id] = params;
+          const idx = self.tables.cart.findIndex(r => String(r.id) === String(id));
+          if (idx < 0) return { changes: 0 };
+          self.tables.cart[idx] = {
+            ...self.tables.cart[idx],
+            name_ar, name_en, q: qVal, p, got
+          };
+          self._save();
+          return { changes: 1 };
+        }
+        // cart delete single
+        if (/^DELETE FROM cart WHERE id = \?/i.test(q)) {
+          const id = String(params[0]);
+          const before = self.tables.cart.length;
+          self.tables.cart = self.tables.cart.filter(r => String(r.id) !== id);
+          const changes = before - self.tables.cart.length;
+          self._save();
+          return { changes };
+        }
+        // cart delete got = 1
+        if (/^DELETE FROM cart WHERE got = 1/i.test(q)) {
+          const before = self.tables.cart.length;
+          self.tables.cart = self.tables.cart.filter(r => !r.got);
+          const changes = before - self.tables.cart.length;
+          self._save();
+          return { changes };
+        }
+        // car_items insert
+        if (/^INSERT INTO car_items/i.test(q)) {
+          const [id, ico, c, name_ar, name_en, s_ar, s_en, days, ai, sort_order] = params;
+          const row = { id, ico, c, name_ar, name_en, s_ar, s_en, days, ai, sort_order };
+          const idx = self.tables.car_items.findIndex(r => String(r.id) === String(id));
+          if (idx >= 0) self.tables.car_items[idx] = row;
+          else self.tables.car_items.push(row);
+          self._save();
+          return { changes: 1 };
+        }
+        // car_items update
+        if (/^UPDATE car_items SET/i.test(q)) {
+          const [ico, c, name_ar, name_en, s_ar, s_en, days, ai, id] = params;
+          const idx = self.tables.car_items.findIndex(r => String(r.id) === String(id));
+          if (idx < 0) return { changes: 0 };
+          const ex = self.tables.car_items[idx];
+          self.tables.car_items[idx] = {
+            ...ex,
+            ico: ico ?? ex.ico,
+            c: c ?? ex.c,
+            name_ar: name_ar ?? ex.name_ar,
+            name_en: name_en ?? ex.name_en,
+            s_ar: s_ar ?? ex.s_ar,
+            s_en: s_en ?? ex.s_en,
+            days: days ?? ex.days,
+            ai: ai ?? ex.ai
+          };
+          self._save();
+          return { changes: 1 };
+        }
+        // car_items delete
+        if (/^DELETE FROM car_items WHERE id = \?/i.test(q)) {
+          const id = String(params[0]);
+          const before = self.tables.car_items.length;
+          self.tables.car_items = self.tables.car_items.filter(r => String(r.id) !== id);
+          const changes = before - self.tables.car_items.length;
+          self._save();
+          return { changes };
+        }
+        return { changes: 0 };
+      }
+    };
+  }
+}
 
 const SEED_DATA = {
   salary: 150000,
@@ -149,7 +434,12 @@ const SEED_DATA = {
 
 class MasrofiDB {
   constructor(dbPath = DB_PATH) {
-    this.db = new DatabaseSync(dbPath);
+    this.db = DatabaseSync ? new DatabaseSync(dbPath) : new FallbackDatabaseSync(dbPath);
+    this.initTables();
+    this.seedIfEmpty();
+  }
+
+  initDb() {
     this.initTables();
     this.seedIfEmpty();
   }
@@ -319,6 +609,31 @@ class MasrofiDB {
       INSERT INTO config (key, val) VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET val = excluded.val
     `).run(key, JSON.stringify(val));
+  }
+
+  updateConfig(fields = {}) {
+    if (fields.bannerHidden !== undefined) {
+      this.setConfig('bannerHidden', Boolean(fields.bannerHidden));
+    }
+    if (fields.scanCount !== undefined && !isNaN(fields.scanCount)) {
+      this.setConfig('scanCount', Number(fields.scanCount));
+    }
+    if (fields.day !== undefined && !isNaN(fields.day)) {
+      this.setConfig('day', Number(fields.day));
+    }
+    if (fields.salary !== undefined && !isNaN(fields.salary) && Number(fields.salary) > 0) {
+      this.setConfig('salary', Number(fields.salary));
+    }
+    return {
+      bannerHidden: this.getConfig('bannerHidden', false),
+      scanCount: this.getConfig('scanCount', 0),
+      day: this.getConfig('day', 10),
+      salary: this.getConfig('salary', 150000)
+    };
+  }
+
+  getFullState() {
+    return this.getState();
   }
 
   getState() {
@@ -691,8 +1006,12 @@ class MasrofiDB {
   }
 }
 
+const dbInstance = new MasrofiDB();
+
 module.exports = {
   MasrofiDB,
   SEED_DATA,
-  dbInstance: new MasrofiDB()
+  dbInstance,
+  initDb: () => dbInstance.initDb(),
+  getFullState: () => dbInstance.getState()
 };

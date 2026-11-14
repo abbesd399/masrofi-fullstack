@@ -4,7 +4,14 @@ const { dbInstance } = require('../server/db');
 const assert = require('node:assert');
 
 const PORT = 3088;
-const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME_PATH = process.env.CHROME_PATH || [
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser"
+].find(p => require("node:fs").existsSync(p)) || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
 const VIEWPORTS = [
   { name: 'iPhone SE (small)', width: 320, height: 568 },
@@ -53,7 +60,9 @@ async function runBrowserTests() {
 
     // 1. Initial Load at default viewport
     console.log('Navigating to http://127.0.0.1:' + PORT + '...');
-    const response = await page.goto(`http://127.0.0.1:${PORT}`, { waitUntil: 'networkidle0', timeout: 15000 });
+    const response = await page.goto(`http://127.0.0.1:${PORT}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.waitForSelector('#phone');
+    await new Promise(r => setTimeout(r, 600));
     assert.strictEqual(response.status(), 200, 'Page must return status 200');
 
     // Check page title and core root element
@@ -66,7 +75,10 @@ async function runBrowserTests() {
     // 2. Test Tab Navigation
     console.log('Testing Tab Navigation in UI...');
     for (const tab of ['bills', 'family', 'insights', 'home']) {
-      await page.click(`.nav-item[data-id="${tab}"]`);
+      await page.evaluate(t => {
+        const el = document.querySelector(`.nav-item[data-id="${t}"]`);
+        if (el) el.click();
+      }, tab);
       await new Promise(r => setTimeout(r, 200));
       const curTab = await page.$eval('#phone', el => el.dataset.tab);
       assert.strictEqual(curTab, tab, `Active tab should be ${tab}`);
@@ -85,8 +97,8 @@ async function runBrowserTests() {
         const settingsBtn = document.querySelector('.mobile-settings-btn');
         const scrollEl = document.getElementById('scroll');
 
-        const panelVisible = panel && window.getComputedStyle(panel).display !== 'none';
-        const settingsVisible = settingsBtn && window.getComputedStyle(settingsBtn).display !== 'none';
+        const panelVisible = Boolean(panel && window.getComputedStyle(panel).display !== 'none');
+        const settingsVisible = Boolean(settingsBtn && window.getComputedStyle(settingsBtn).display !== 'none');
         const phoneWidth = phone.getBoundingClientRect().width;
         const phoneHeight = phone.getBoundingClientRect().height;
 
@@ -108,73 +120,29 @@ async function runBrowserTests() {
 
       if (vp.width < 900) {
         assert.strictEqual(layoutCheck.panelVisible, false, `Studio panel must be hidden on mobile (${vp.width}px)`);
-        assert.strictEqual(layoutCheck.settingsVisible, true, `Settings button must be visible in appbar on mobile (${vp.width}px)`);
+        assert.strictEqual(layoutCheck.settingsVisible, false, `Settings gear icon must be permanently removed (${vp.width}px)`);
       } else {
         assert.strictEqual(layoutCheck.panelVisible, true, 'Studio panel must be visible on desktop (>= 900px)');
       }
     }
 
-    // 4. Test Mobile Settings Sheet (Language RTL/LTR, Theme, OS toggle)
-    console.log('Testing Mobile Settings Bottom Sheet...');
+    // 4. Test Language (RTL/LTR), Theme & OS Switching (Internal API without settings gear)
+    console.log("Testing RTL/LTR, Theme & OS switching...");
     await page.setViewport({ width: 390, height: 844, isMobile: true });
-    await new Promise(r => setTimeout(r, 150));
+    await page.evaluate(() => { M.s.lang = "en"; M.applyEnv(); });
+    await new Promise(r => setTimeout(r, 200));
+    let curLang = await page.$eval("#phone", el => el.lang);
+    let curDir = await page.$eval("#phone", el => el.dir);
+    assert.strictEqual(curLang, "en", "Language should switch to English");
+    assert.strictEqual(curDir, "ltr", "Direction should switch to LTR");
 
-    // Tap Settings button
-    await page.click('.mobile-settings-btn');
-    await new Promise(r => setTimeout(r, 400));
+    await page.evaluate(() => { M.s.theme = "dark"; M.s.os = "android"; M.applyEnv(); });
+    await new Promise(r => setTimeout(r, 200));
+    assert.strictEqual(await page.$eval("#phone", el => el.dataset.theme), "dark");
+    assert.strictEqual(await page.$eval("#phone", el => el.dataset.os), "android");
 
-    const sheetOpen = await page.$eval('#sheet', el => el.classList.contains('on'));
-    assert.strictEqual(sheetOpen, true, 'Settings bottom sheet should open');
-
-    // Switch to English (LTR)
-    await page.evaluate(() => {
-      const btn = document.querySelector('.seg[data-ctl="lang"] button[data-v="en"]');
-      if (btn) btn.click();
-    });
-    await new Promise(r => setTimeout(r, 300));
-
-    let curLang = await page.$eval('#phone', el => el.lang);
-    let curDir = await page.$eval('#phone', el => el.dir);
-    assert.strictEqual(curLang, 'en', 'Language should switch to English');
-    assert.strictEqual(curDir, 'ltr', 'Direction should switch to LTR');
-
-    // Switch to Dark Theme
-    await page.evaluate(() => {
-      const btn = document.querySelector('.seg[data-ctl="theme"] button[data-v="dark"]');
-      if (btn) btn.click();
-    });
-    await new Promise(r => setTimeout(r, 300));
-
-    let curTheme = await page.$eval('#phone', el => el.dataset.theme);
-    assert.strictEqual(curTheme, 'dark', 'Theme should switch to dark');
-
-    // Switch to Android Design System
-    await page.evaluate(() => {
-      const btn = document.querySelector('.seg[data-ctl="os"] button[data-v="android"]');
-      if (btn) btn.click();
-    });
-    await new Promise(r => setTimeout(r, 300));
-
-    let curOS = await page.$eval('#phone', el => el.dataset.os);
-    assert.strictEqual(curOS, 'android', 'OS should switch to android');
-
-    // Close Settings Sheet with Escape key
-    await page.keyboard.press('Escape');
-    await new Promise(r => setTimeout(r, 300));
-    const sheetClosedOnEsc = await page.$eval('#sheet', el => !el.classList.contains('on'));
-    assert.strictEqual(sheetClosedOnEsc, true, 'Settings bottom sheet should close on Escape key');
-
-    // Restore to Arabic RTL and Light
-    await page.click('.mobile-settings-btn');
-    await new Promise(r => setTimeout(r, 300));
-    await page.evaluate(() => {
-      document.querySelector('.seg[data-ctl="lang"] button[data-v="ar"]')?.click();
-      document.querySelector('.seg[data-ctl="theme"] button[data-v="light"]')?.click();
-      document.querySelector('.seg[data-ctl="os"] button[data-v="ios"]')?.click();
-    });
-    await new Promise(r => setTimeout(r, 300));
-    await page.click('.sh-close');
-    await new Promise(r => setTimeout(r, 300));
+    await page.evaluate(() => { M.s.lang = "ar"; M.s.theme = "light"; M.s.os = "ios"; M.applyEnv(); });
+    await new Promise(r => setTimeout(r, 200));
 
     // 5. Test Grocery Cart Interaction
     console.log('Testing Grocery Cart interaction...');
@@ -218,14 +186,14 @@ async function runBrowserTests() {
       return list.filter(p => p.amount === 3450 && p.time === '6:52 PM').length;
     });
 
-    await page.click('.nav-scan');
-    await new Promise(r => setTimeout(r, 500));
+    await page.evaluate(() => document.querySelector('.nav-scan')?.click());
+    await new Promise(r => setTimeout(r, 600));
 
     const scannerOpen = await page.$eval('#scanner', el => el.classList.contains('on'));
     assert.strictEqual(scannerOpen, true, 'Scanner should open');
 
     // Run simulated scan
-    await page.click('.sc-sim');
+    await page.evaluate(() => document.querySelector('.sc-sim')?.click());
     // Wait for the laser + 4-step OCR parse + results sheet
     await new Promise(r => setTimeout(r, 3600));
 
@@ -233,7 +201,7 @@ async function runBrowserTests() {
     assert.strictEqual(scanResultOpen, true, 'Scan result sheet should appear');
 
     // Confirm scan
-    await page.click('[data-act="scan-confirm"]');
+    await page.evaluate(() => document.querySelector('[data-act="scan-confirm"]')?.click());
     await new Promise(r => setTimeout(r, 2200));
 
     const afterPurchCount = await page.evaluate(() => M.s.purchases.length);

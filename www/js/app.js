@@ -1,4 +1,4 @@
-/* Masrofi — app controller + Desktop Preview Studio wiring */
+/* Masrofi — app controller + Desktop Preview Studio wiring (Clean Appbar, Internal System Config) */
 M.s = Object.assign(M.seed(), { os: 'ios', theme: 'light', lang: 'ar', tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false });
 M.TABS = [['home', 'home'], ['bills', 'receipt'], ['family', 'users'], ['insights', 'spark']];
 
@@ -14,7 +14,6 @@ M.appbarHtml = () => {
   const s = M.s, titles = { home: M.t('hello'), bills: M.t('billsT'), family: M.t('familyT'), insights: M.t('insightsT') };
   const unpaid = s.bills.filter(b => !b.paid).length;
   return `<div class="ab-title">${s.tab === 'home' ? `<div class="ab-sub">${M.t('november')}</div>` : ''}<h2 style="${s.tab === 'home' ? 'font-size:19px;line-height:1.3;white-space:nowrap' : ''}">${titles[s.tab]}</h2></div>
-    <button type="button" class="icon-btn mobile-settings-btn" data-act="settings" aria-label="settings">${M.ico('cog', 20)}</button>
     <button type="button" class="icon-btn" data-act="bell" id="bell" aria-label="alerts">${M.ico('bell', 20)}${unpaid ? '<span class="dot"></span>' : ''}</button>
     ${s.tab === 'home' ? M.avatar('abu', 'ring', 'style="width:40px;height:40px;cursor:pointer" data-act="member" data-id="abu"') : ''}`;
 };
@@ -84,74 +83,15 @@ M.acts['close-sheet'] = () => {
   else if (M.s.tab === 'insights') M.render();
 };
 M.acts.bell = el => { M.replayAnim(el.querySelector('.ic'), 'wiggle', 820); setTimeout(() => M.acts['banner-open'](), 420); };
-M.acts.settings = () => {
-  const s = M.s;
-  M.sheet.open(M.t('settings'), `
-    <div style="display:flex;flex-direction:column;gap:18px">
-      <div>
-        <div class="sec-h" style="margin-bottom:8px"><h3>${M.t('designSystem')}</h3></div>
-        <div class="seg" data-ctl="os" style="background:var(--surface-2);border-color:var(--line)">
-          <button type="button" data-v="ios" class="${s.os === 'ios' ? 'on' : ''}">
-            <svg class="ctl-ic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
-            <span>iOS 18 · HIG</span>
-          </button>
-          <button type="button" data-v="android" class="${s.os === 'android' ? 'on' : ''}">
-            <svg class="ctl-ic" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85a.637.637 0 0 0-.83.22l-1.88 3.24a11.463 11.463 0 0 0-8.94 0L5.65 5.67a.643.643 0 0 0-.87-.2c-.28.18-.37.54-.22.83L6.4 9.48A10.78 10.78 0 0 0 1 18h22a10.78 10.78 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg>
-            <span>Android · M3</span>
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <div class="sec-h" style="margin-bottom:8px"><h3>${M.t('theme')}</h3></div>
-        <div class="seg" data-ctl="theme" style="background:var(--surface-2);border-color:var(--line)">
-          <button type="button" data-v="light" class="${s.theme === 'light' ? 'on' : ''}">
-            <svg class="ctl-ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.93 4.93l1.77 1.77M17.3 17.3l1.77 1.77M2 12h2.5M19.5 12H22M4.93 19.07l1.77-1.77M17.3 6.7l1.77-1.77"/></svg>
-            <span>${M.t('light')}</span>
-          </button>
-          <button type="button" data-v="dark" class="${s.theme === 'dark' ? 'on' : ''}">
-            <svg class="ctl-ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            <span>${M.t('dark')}</span>
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <div class="sec-h" style="margin-bottom:8px"><h3>${M.t('langDir')}</h3></div>
-        <div class="seg" data-ctl="lang" style="background:var(--surface-2);border-color:var(--line)">
-          <button type="button" data-v="ar" class="${s.lang === 'ar' ? 'on' : ''}">العربية · RTL</button>
-          <button type="button" data-v="en" class="${s.lang === 'en' ? 'on' : ''}">English · LTR</button>
-        </div>
-      </div>
-
-      <div style="margin-top:6px">
-        <button type="button" class="btn tonal" data-act="reset-demo" style="color:var(--crit);background:color-mix(in srgb,var(--crit) 12%,transparent)">
-          ${M.ico('trash', 18, 2)} <span>${M.t('resetDemo')}</span>
-        </button>
-      </div>
-    </div>`, {
-    onOpen: sh => {
-      sh.querySelectorAll('.seg[data-ctl] button').forEach(b => {
-        b.addEventListener('click', () => {
-          const ctl = b.parentElement.dataset.ctl;
-          M.s[ctl] = b.dataset.v;
-          b.parentElement.querySelectorAll('button').forEach(btn => btn.classList.toggle('on', btn === b));
-          if (M.api) M.api.saveLocal(M.s);
-          M.applyEnv({ keepSheet: true });
-        });
-      });
-    }
-  });
-};
-M.acts['reset-demo'] = () => {
-  M.sheet.close();
-  M.SIM.reset();
-};
 
 /* ── live scenario simulators ── */
 M.SIM = {
   alert() {
     M.closeScanner(); M.s.bannerHidden = false;
+    if (M.api) {
+      M.api.saveLocal(M.s);
+      M.api.updateConfig({ bannerHidden: false }).catch(() => {});
+    }
     if (M.s.tab !== 'home') M.go('home'); else M.render();
     const unpaid = M.s.bills.filter(b => !b.paid);
     M.notify(`${M.t('alertTitle')}`, M.t('alertBody')(unpaid.length, 15), () => M.acts['banner-open']());
@@ -178,7 +118,7 @@ M.SIM = {
     if (M.s.tab === 'family') { M.s.famSeg = 'feed'; M.s.famFilter = 'all'; M.render(); } else if (M.s.tab === 'home') M.render(); else M.go('home');
     M.freshId = null;
     const m = M.member(mid);
-    M.notify(M.t('newPurchase')(M.L(m.n), M.L({ ar: mar, en: men })), `<span class="neg">−${M.fmt(amount)} ${M.t('cur')}</span> · ${M.L(M.CATS[cat].n)}`, () => M.acts.receipt({ dataset: { id } }));
+    M.notify(M.t('newPurchase')(M.L(m.n), M.L({ ar: mar, en: men })), `${M.moneyNeg(amount)} · ${M.L(M.CATS[cat].n)}`, () => M.acts.receipt({ dataset: { id } }));
     M.checkThreshold();
   },
   reset() {
@@ -326,7 +266,7 @@ M.fit = () => {
 };
 addEventListener('resize', M.fit);
 
-/* Offline-First state initialization & background API sync */
+/* Offline-First state initialization + Internal System Realtime Sync */
 M.initOfflineSync = async () => {
   if (!M.api) return;
   // 1. Instant local hydration
@@ -337,9 +277,12 @@ M.initOfflineSync = async () => {
     M.render();
   }
 
-  // 2. Background sync with backend API
+  // 2. Pull system-level Supabase config from server (/api/integrations) if available, then start Realtime
+  await M.api.syncSystemConfigFromServer();
+  M.api.initRealtimeSync();
+
+  // 3. Background sync with backend API / Supabase
   try {
-    // Flush any pending offline mutations first so server receives them before state fetch
     await M.api.flushQueue();
 
     const remote = await M.api.fetchState();

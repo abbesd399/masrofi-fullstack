@@ -1,5 +1,5 @@
-/* AI Camera Scanner — Capture → AI Parse → Auto-Route & Save in Exact Place */
-M.scan = { mode: 'receipt', billIdx: 0, busy: false, timers: [] };
+/* AI Camera Scanner — Capture → AI Parse (Gemini 2.5 Flash / Groq / Smart Local) → Auto-Route & Save in Exact Place */
+M.scan = { mode: 'receipt', billIdx: 0, busy: false, timers: [], aiExtracted: null };
 
 /* 3 Realistic Paper Bills (Variable Sonelgaz, Variable SEAAL Water, Fixed SAA Car Insurance) */
 M.BILL_SAMPLES = [
@@ -134,7 +134,7 @@ M.capturePhoto = async (sourceType = 'camera') => {
 
 M.openScanner = (mode = 'receipt', auto = false) => {
   M.clearScanTimers();
-  M.scan.mode = mode; M.scan.open = true;
+  M.scan.mode = mode; M.scan.open = true; M.scan.aiExtracted = null;
   const sc = M.$('#scanner');
   const billChips = mode === 'bill' ? `<div class="sc-samples">
     ${M.BILL_SAMPLES.map((s, idx) => `<button type="button" class="sc-samp ${idx === (M.scan.billIdx || 0) ? 'on' : ''}" data-act="scan-sample" data-idx="${idx}">${M.L(s.label)}</button>`).join('')}
@@ -184,6 +184,7 @@ M.liftSheet = on => { M.$('#sheet').style.zIndex = on ? 56 : ''; M.$('#scrim').s
 M.runScan = (customImage = null) => {
   if (M.scan.busy || !M.scan.open) return;
   M.scan.busy = true;
+  M.scan.aiExtracted = null;
   const $ = id => document.getElementById(id), mode = M.scan.mode;
   M.replayAnim(document.querySelector('.shutter'), 'snap', 350);
   M.replayAnim($('flashfx'), 'on', 460);
@@ -191,6 +192,14 @@ M.runScan = (customImage = null) => {
 
   if (customImage && $('paper')) {
     $('paper').innerHTML = `<img src="${customImage}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;filter:contrast(1.04)">`;
+    // Trigger real AI Vision extraction in parallel while steps animate
+    if (M.api && typeof M.api.analyzeScan === 'function') {
+      M.api.analyzeScan({ mode, image: customImage, sampleIdx: M.scan.billIdx || 0 }).then(res => {
+        if (res && res.extracted) {
+          M.scan.aiExtracted = res.extracted;
+        }
+      }).catch(() => {});
+    }
   }
   $('paper')?.classList.add('on');
   $('vfFrame')?.classList.add('locked');
@@ -216,22 +225,34 @@ M.scanResult = (mode, customImage = null) => {
   if (!M.scan.open) return;
   M.scan.customImage = customImage;
   const ar = M.s.lang === 'ar';
+  const aiExt = M.scan.aiExtracted;
   const samp = M.BILL_SAMPLES[M.scan.billIdx || 0];
-  const dup = mode === 'receipt' ? M.s.scanCount > 0 : (!samp.isCurrentMonth && M.s.scheduled.some(b => b.id === 'ins2'));
+
+  const rMerchant = aiExt?.merchant ? M.L(aiExt.merchant) : (ar ? 'أونو هايبر' : 'Uno Hypermarket');
+  const rAmount = aiExt?.amount ? Number(aiExt.amount) : 3450;
+  const rCat = (aiExt?.cat && M.CATS[aiExt.cat]) ? aiExt.cat : 'groceries';
+
+  const bBiller = aiExt?.biller ? M.L(aiExt.biller) : M.L(samp.biller);
+  const bKind = aiExt?.kind || samp.kind;
+  const bAmount = aiExt?.amount ? Number(aiExt.amount) : samp.amount;
+  const bDueText = aiExt?.dueText ? M.L(aiExt.dueText) : M.L(samp.dueText);
+  const bIsCurrent = aiExt?.isCurrentMonth !== undefined ? Boolean(aiExt.isCurrentMonth) : samp.isCurrentMonth;
+
+  const dup = mode === 'receipt' ? M.s.scanCount > 0 && !aiExt : (!bIsCurrent && M.s.scheduled.some(b => b.id === 'ins2'));
   const fields = mode === 'receipt'
     ? [
-        [M.t('merchant'), ar ? 'أونو هايبر' : 'Uno Hypermarket'],
-        [M.t('amount'), '3,450 ' + M.t('cur')],
-        [M.t('category'), M.L(M.CATS.groceries.n)],
+        [M.t('merchant'), rMerchant],
+        [M.t('amount'), M.fmt(rAmount) + ' ' + M.t('cur')],
+        [M.t('category'), M.L(M.CATS[rCat].n)],
         [M.t('member'), M.L(M.member('umm').n)],
         [M.t('autoDest'), M.t('segFeed')]
       ]
     : [
-        [M.t('biller'), M.L(samp.biller)],
-        [M.t('billType'), M.t(samp.kind === 'var' ? 'billVar' : 'billFixed')],
-        [M.t('amount'), M.fmt(samp.amount) + ' ' + M.t('cur')],
-        [M.t('dueDate'), M.L(samp.dueText)],
-        [M.t('autoDest'), samp.isCurrentMonth ? M.t('destMonth') : M.t('destSched')]
+        [M.t('biller'), bBiller],
+        [M.t('billType'), M.t(bKind === 'var' ? 'billVar' : 'billFixed')],
+        [M.t('amount'), M.fmt(bAmount) + ' ' + M.t('cur')],
+        [M.t('dueDate'), bDueText],
+        [M.t('autoDest'), bIsCurrent ? M.t('destMonth') : M.t('destSched')]
       ];
 
   let alerts = '';
@@ -239,10 +260,10 @@ M.scanResult = (mode, customImage = null) => {
     alerts = `<div class="alert-box" style="--bc:var(--crit)"><span class="ab-i">${M.ico('copy', 20)}</span><div>${M.t('dupWarn')}</div></div>`;
   } else if (mode === 'receipt') {
     alerts = `<div class="alert-box" style="--bc:var(--warn)"><span class="ab-i">${M.ico('trend', 20)}</span><div>${M.t('hikeWarn')(ar ? 'سميد 10 كغ' : 'Semolina 10kg', 12)}</div></div>`;
-  } else if (samp.isCurrentMonth) {
-    const existing = M.s.bills.find(b => b.id === samp.targetId);
+  } else if (bIsCurrent) {
+    const existing = M.s.bills.find(b => b.id === (aiExt?.targetId || samp.targetId));
     const oldP = existing ? existing.amount : samp.oldAmount;
-    alerts = `<div class="alert-box" style="--bc:var(--primary)"><span class="ab-i">${M.ico('bolt', 20)}</span><div>${M.t('varBillNote')(M.fmt(oldP), M.fmt(samp.amount))}</div></div>`;
+    alerts = `<div class="alert-box" style="--bc:var(--primary)"><span class="ab-i">${M.ico('bolt', 20)}</span><div>${M.t('varBillNote')(M.fmt(oldP), M.fmt(bAmount))}</div></div>`;
   }
 
   M.liftSheet(true);
@@ -272,14 +293,21 @@ M.scanResult = (mode, customImage = null) => {
 M.acts['scan-confirm'] = el => {
   const mode = M.scan.mode, ar = M.s.lang === 'ar';
   const samp = M.BILL_SAMPLES[M.scan.billIdx || 0];
+  const aiExt = M.scan.aiExtracted;
   const customImg = M.scan.customImage;
+  M.scan.customImage = null;
+  M.scan.aiExtracted = null;
   el.closest('.sh-body').innerHTML = `<div class="empty">${M.successCheck()}<h4>${M.t(mode === 'receipt' ? 'addedR' : 'addedB')}</h4></div>`;
   
+  const rAmount = aiExt?.amount ? Number(aiExt.amount) : 3450;
+  const rMerchant = aiExt?.merchant || { ar: 'أونو هايبر', en: 'Uno Hypermarket' };
+  const rCat = (aiExt?.cat && M.CATS[aiExt.cat]) ? aiExt.cat : 'groceries';
+
   if (mode === 'receipt') {
     const id = Date.now();
     const newP = {
-      id, member: 'umm', merchant: { ar: 'أونو هايبر', en: 'Uno Hypermarket' }, cat: 'groceries', amount: 3450, day: M.s.day, time: '6:52 PM', scanned: true,
-      items: [['حليب 1 لتر', 'Milk 1L', 4, 90], ['بيض 30', 'Eggs 30', 1, 560], ['سميد 10 كغ', 'Semolina 10kg', 1, 1400], ['دجاج 1 كغ', 'Chicken 1kg', 1, 480], ['خضر', 'Vegetables', 1, 340], ['باقيت', 'Baguette', 6, 15], ['جبن', 'Cheese', 1, 220]].map(([a, e, q, p]) => ({ n: { ar: a, en: e }, q, p }))
+      id, member: 'umm', merchant: rMerchant, cat: rCat, amount: rAmount, day: M.s.day, time: '6:52 PM', scanned: true,
+      items: aiExt?.items || [['حليب 1 لتر', 'Milk 1L', 4, 90], ['بيض 30', 'Eggs 30', 1, 560], ['سميد 10 كغ', 'Semolina 10kg', 1, 1400], ['دجاج 1 كغ', 'Chicken 1kg', 1, 480], ['خضر', 'Vegetables', 1, 340], ['باقيت', 'Baguette', 6, 15], ['جبن', 'Cheese', 1, 220]].map(([a, e, q, p]) => ({ n: { ar: a, en: e }, q, p }))
     };
     M.s.purchases.unshift(newP);
     M.s.scanCount++;
@@ -287,11 +315,11 @@ M.acts['scan-confirm'] = el => {
     M.tickerNew = true;
     if (M.api) {
       M.api.saveLocal(M.s);
-      // Route & persist via POST /api/scan (never double-insert via addPurchase)
-      const payload = customImg ? { mode: 'receipt', image: customImg } : { mode: 'receipt' };
+      const payload = customImg ? { id, mode: 'receipt', image: customImg, ...aiExt } : { id, mode: 'receipt' };
       M.api.scan(payload).then(res => {
         if (res?.persisted?.record?.id) {
           newP.id = res.persisted.record.id;
+          M.freshId = res.persisted.record.id;
           M.api.saveLocal(M.s);
         }
       }).catch(() => {});
@@ -299,38 +327,48 @@ M.acts['scan-confirm'] = el => {
   } else {
     /* Automatically save or update the scanned bill in its exact place! */
     const sampIdx = M.scan.billIdx || 0;
-    if (samp.isCurrentMonth) {
-      const existing = M.s.bills.find(b => b.id === samp.targetId);
+    const isCur = aiExt?.isCurrentMonth !== undefined ? Boolean(aiExt.isCurrentMonth) : samp.isCurrentMonth;
+    const targetId = aiExt?.targetId || samp.targetId;
+    const bAmount = aiExt?.amount ? Number(aiExt.amount) : samp.amount;
+    const bBiller = aiExt?.biller || samp.biller;
+
+    if (isCur) {
+      const existing = M.s.bills.find(b => b.id === targetId);
       if (existing) {
-        existing.amount = samp.amount;
+        existing.amount = bAmount;
         existing.paid = false;
         existing.scanned = true;
         M.freshBillId = existing.id;
       } else {
-        const nid = samp.targetId || ('b' + Date.now());
-        const nb = { id: nid, n: samp.biller, cat: samp.cat, amount: samp.amount, due: samp.dueDay, paid: false, kind: samp.kind, scanned: true };
+        const nid = targetId || ('b' + Date.now());
+        const nb = { id: nid, n: bBiller, cat: aiExt?.cat || samp.cat, amount: bAmount, due: aiExt?.dueDay || samp.dueDay, paid: false, kind: aiExt?.kind || samp.kind, scanned: true };
         M.s.bills.unshift(nb);
         M.freshBillId = nid;
       }
-    } else if (!M.s.scheduled.some(b => b.id === 'ins2')) {
+    } else {
       const sched = {
-        id: 'ins2', n: { ar: 'تأمين أكسنت · SAA', en: 'Accent insurance · SAA' }, cat: 'car', amount: 19800, kind: 'fixed',
+        id: 'ins2', n: { ar: 'تأمين أكسنت · SAA', en: 'Accent insurance · SAA' }, cat: 'car', amount: bAmount || 19800, kind: 'fixed',
         dueStr: { ar: 'يستحق 8 ديسمبر', en: 'Due Dec 8' }, remStr: { ar: 'تذكير 1 ديسمبر', en: 'Reminder Dec 1' }, isScheduled: true
       };
-      M.s.scheduled.push(sched);
-      const newCarItem = { id: 'ins2', ico: 'shield', c: '#EC4899', n: { ar: 'تأمين أكسنت (أم خالد)', en: 'Accent insurance (Umm Khalid)' }, s: { ar: '8 ديسمبر · 19,800 د.ج', en: 'Dec 8 · 19,800 DZD' }, days: 28 };
-      M.s.carItems.splice(1, 0, newCarItem);
+      const existingIdx = M.s.scheduled.findIndex(b => b.id === 'ins2');
+      if (existingIdx >= 0) M.s.scheduled[existingIdx] = sched;
+      else M.s.scheduled.push(sched);
+
+      const newCarItem = { id: 'ins2', ico: 'shield', c: '#EC4899', n: { ar: 'تأمين أكسنت (أم خالد)', en: 'Accent insurance (Umm Khalid)' }, s: { ar: `8 ديسمبر · ${M.fmt(bAmount || 19800)} د.ج`, en: `Dec 8 · ${M.fmt(bAmount || 19800)} DZD` }, days: 28 };
+      const carIdx = M.s.carItems.findIndex(ci => ci.id === 'ins2');
+      if (carIdx >= 0) M.s.carItems[carIdx] = newCarItem;
+      else M.s.carItems.splice(1, 0, newCarItem);
       M.freshBillId = 'ins2';
     }
 
     if (M.api) {
       M.api.saveLocal(M.s);
-      // Auto-route and persist on server via single POST /api/scan call
-      const payload = customImg ? { mode: 'bill', sampleIdx: sampIdx, image: customImg } : { mode: 'bill', sampleIdx: sampIdx };
+      const payload = customImg ? { mode: 'bill', sampleIdx: sampIdx, image: customImg, ...aiExt } : { mode: 'bill', sampleIdx: sampIdx };
       M.api.scan(payload).then(res => {
         if (res?.state) {
           const keep = { os: M.s.os, theme: M.s.theme, lang: M.s.lang, tab: M.s.tab, billSeg: M.s.billSeg, famSeg: M.s.famSeg, privacy: M.s.privacy };
           Object.assign(M.s, res.state, keep);
+          if (res.persisted?.targetId) M.freshBillId = res.persisted.targetId;
           M.api.saveLocal(M.s);
         }
       }).catch(() => {});
@@ -343,13 +381,13 @@ M.acts['scan-confirm'] = el => {
     M.closeScanner();
     if (mode === 'receipt') {
       M.go('home');
-      M.toast(`${M.ico('checkc', 16)} −3,450 ${M.t('cur')} · ${ar ? 'أونو هايبر' : 'Uno Hypermarket'}`);
+      M.toast(`${M.ico('checkc', 16)} −${M.fmt(rAmount)} ${M.t('cur')} · ${M.L(rMerchant)}`);
       M.checkThreshold();
     } else {
       M.s.billSeg = 'bills';
       M.s.billFilter = 'all';
       M.go('bills');
-      M.toast(`${M.ico('checkc', 16)} ${M.t('addedB')} · ${M.L(samp.biller)}`);
+      M.toast(`${M.ico('checkc', 16)} ${M.t('addedB')} · ${M.L(aiExt?.biller || samp.biller)}`);
       M.checkThreshold();
     }
     M.freshId = null;
