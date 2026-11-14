@@ -300,6 +300,9 @@ M.api = {
 
   applyIncomingRealtimeState(newState) {
     if (!newState || !window.M || !M.s) return;
+    if (this._lastMutationTs && (Date.now() - this._lastMutationTs < 1500)) {
+      return;
+    }
     const keep = {
       os: M.s.os, theme: M.s.theme, lang: M.s.lang,
       tab: M.s.tab, billSeg: M.s.billSeg, famSeg: M.s.famSeg, privacy: M.s.privacy

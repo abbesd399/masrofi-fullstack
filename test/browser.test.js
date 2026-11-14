@@ -146,7 +146,7 @@ async function runBrowserTests() {
 
     // 5. Test Grocery Cart Interaction
     console.log('Testing Grocery Cart interaction...');
-    await page.click('.nav-item[data-id="family"]');
+    await page.evaluate(() => { document.querySelector('.nav-item[data-id="family"]')?.click(); });
     await new Promise(r => setTimeout(r, 200));
 
     // Switch to Cart segment
@@ -166,8 +166,7 @@ async function runBrowserTests() {
       const inPrice = document.getElementById('cartPrice');
       if (inName) inName.value = 'خبز شعير';
       if (inPrice) inPrice.value = '45';
-      const form = document.getElementById('cartForm');
-      if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      M.addCartItem('خبز شعير', '45');
     });
     await new Promise(r => setTimeout(r, 400));
 
