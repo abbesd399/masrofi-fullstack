@@ -120,8 +120,10 @@ async function analyzeWithFreeAI(body, aiCfg = {}) {
     ? `\nHistorical family prices for comparison: ${JSON.stringify(body.priceHistory)}. If any item or bill on this paper has a higher price than its historical lastPrice, include it in "detectedHikes": [{"n":{"ar":"اسم الصنف","en":"Item name"},"was":100,"now":130}].`
     : '';
   const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English receipt and bill OCR parser and price-hike detector.
-Read the exact text, numbers, store/biller name, total amount, date, and line items written on the provided ${mode === 'bill' ? 'utility/car bill' : 'purchase receipt'} and return ONLY a valid JSON object with no markdown fences:${priceHistory}
-If mode is "receipt":
+Read the exact text, numbers, store/biller name, total amount, date, and line items written on the provided document.${priceHistory}
+AUTOMATICALLY determine if this document is a purchase receipt (mode: "receipt") or a utility/service/car bill or recurring obligation (mode: "bill").
+Return ONLY a valid JSON object with no markdown fences:
+If it is a purchase receipt (supermarket, grocery, store, dining, restaurant, market, shop, fuel station, goods):
 {
   "mode": "receipt",
   "merchant": { "ar": "اسم المتجر المكتوب في الورقة", "en": "Store name from paper" },
@@ -131,7 +133,7 @@ If mode is "receipt":
   "items": [{ "n": { "ar": "اسم الصنف من الورقة", "en": "Item name" }, "q": 1, "p": 3450 }],
   "detectedHikes": []
 }
-If mode is "bill":
+If it is a bill, periodic invoice or obligation (electricity/gas, water, telecom/internet, car insurance, maintenance, loan, school fees, rent, taxes):
 {
   "mode": "bill",
   "targetId": "elec" | "water" | "ins2" | "custom",

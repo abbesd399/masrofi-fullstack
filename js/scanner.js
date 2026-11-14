@@ -378,9 +378,6 @@ M.openScanner = (mode = 'receipt', auto = false) => {
         <button type="button" class="sc-x" data-act="scan-flash" aria-label="flash">${M.ico('flash', 18)}</button>
       </div>
     </div>
-    <div class="sc-modes" data-m="${mode}"><span class="thumb"></span>
-      <button type="button" class="${mode === 'receipt' ? 'on' : ''}" data-act="scan-mode" data-id="receipt">${M.t('scReceipt')}</button>
-      <button type="button" class="${mode === 'bill' ? 'on' : ''}" data-act="scan-mode" data-id="bill">${M.t('scBill')}</button></div>
     <div class="viewfinder">
       <div class="vf-grid"></div><div class="vf-noise"></div>
       <video id="camVideo" autoplay playsinline muted webkit-playsinline></video>
@@ -388,7 +385,12 @@ M.openScanner = (mode = 'receipt', auto = false) => {
       <div class="cam-bar" id="camSelectorBar"></div>
       <div class="vf-frame" id="vfFrame"><i></i><i></i><i></i><i></i></div>
       <div class="laser" id="laser"></div>
-      <div class="vf-hint" id="vfHint">${M.t('scanHint')}</div>
+      <div class="cam-zoom-dial" id="camZoomDial">
+        <button type="button" class="cam-z-btn" data-act="scan-zoom" data-zoom="0.5">0.5</button>
+        <button type="button" class="cam-z-btn on" data-act="scan-zoom" data-zoom="1">1x</button>
+        <button type="button" class="cam-z-btn" data-act="scan-zoom" data-zoom="2.5">2.5</button>
+      </div>
+      <div class="vf-hint" id="vfHint">${ar ? 'وجّه الكاميرا نحو أي إيصال أو فاتورة — سيتعرف عليها الذكاء الاصطناعي تلقائياً' : 'Point camera at any receipt or bill — AI detects it automatically'}</div>
       <div class="ai-steps" id="aiSteps"></div>
       <div class="flashfx" id="flashfx"></div>
     </div>
@@ -442,6 +444,74 @@ M.acts['scan-pick-cam'] = async el => {
   await M.startCameraStream();
   M.renderCameraBar();
   M.toast(`${M.ico('camera', 15, 2)} ${ar ? 'تم اختيار: ' : 'Selected: '}${M.L(chosen.label)}`);
+};
+
+/* Camera Zoom Dial (0.5 · 1x · 2.5) with Apple Gold Active Indicator */
+M.acts['scan-zoom'] = async el => {
+  if (M.scan.busy) return;
+  const zoom = el.dataset.zoom || '1';
+  await M.setCameraZoom(zoom);
+};
+
+M.setCameraZoom = async (zoom = '1') => {
+  M.scan.zoom = zoom;
+  const dial = document.getElementById('camZoomDial');
+  if (dial) {
+    const btns = dial.querySelectorAll('.cam-z-btn');
+    btns.forEach(b => {
+      const isThis = b.dataset.zoom === zoom;
+      b.classList.toggle('on', isThis);
+      const base = b.dataset.zoom;
+      b.textContent = isThis ? `${base}x` : base;
+    });
+  }
+
+  // 1. Hardware digital/optical camera track zoom
+  if (M.scan.stream) {
+    const track = M.scan.stream.getVideoTracks?.()[0];
+    if (track && typeof track.getCapabilities === 'function') {
+      try {
+        const caps = track.getCapabilities();
+        if (caps.zoom) {
+          const zNum = Number(zoom) || 1;
+          const targetZ = Math.min(caps.zoom.max || 10, Math.max(caps.zoom.min || 1, zNum));
+          await track.applyConstraints({ advanced: [{ zoom: targetZ }] });
+        }
+      } catch {}
+    }
+  }
+
+  // 2. Lens switching when device exposes ultra-wide vs telephoto cameras
+  if (Array.isArray(M.scan.cameras) && M.scan.cameras.length > 1) {
+    let targetCam = null;
+    if (zoom === '0.5') {
+      targetCam = M.scan.cameras.find(c => {
+        const s = (c.label?.en || c.label?.ar || c.id || '').toLowerCase();
+        return s.includes('ultra') || s.includes('wide') || s.includes('0.5');
+      });
+    } else if (zoom === '2.5') {
+      targetCam = M.scan.cameras.find(c => {
+        const s = (c.label?.en || c.label?.ar || c.id || '').toLowerCase();
+        return s.includes('tele') || s.includes('zoom') || s.includes('2.5') || s.includes('3x');
+      });
+    } else if (zoom === '1') {
+      targetCam = M.scan.cameras.find(c => c.id === 'env_main' || (!c.id?.includes('wide') && !c.id?.includes('tele')));
+    }
+    if (targetCam && targetCam.deviceId && targetCam.deviceId !== M.scan.deviceId) {
+      M.scan.deviceId = targetCam.deviceId;
+      M.scan.facing = targetCam.facing || 'environment';
+      await M.startCameraStream();
+      M.renderCameraBar();
+    }
+  }
+
+  // 3. Smooth viewfinder visual zoom scale
+  const vid = document.getElementById('camVideo');
+  if (vid) {
+    vid.style.transform = zoom === '1' ? 'none' : `scale(${zoom})`;
+    vid.style.transformOrigin = 'center center';
+    vid.style.transition = 'transform .22s cubic-bezier(0.34, 1.56, 0.64, 1)';
+  }
 };
 
 M.closeScanner = () => {
@@ -534,6 +604,21 @@ M.scanResult = (mode, customImage = null) => {
   M.scan.customImage = customImage;
   const ar = M.s.lang === 'ar';
   const aiExt = M.scan.aiExtracted;
+
+  // Auto-detect mode: AI decision automatically resolves between purchase receipt and bill
+  let resolvedMode = mode;
+  if (aiExt && aiExt.mode) {
+    resolvedMode = aiExt.mode;
+  } else if (aiExt && (aiExt.biller || aiExt.dueDay || aiExt.kind)) {
+    resolvedMode = 'bill';
+  } else if (aiExt && aiExt.merchant) {
+    resolvedMode = 'receipt';
+  } else if (!resolvedMode || resolvedMode === 'auto') {
+    resolvedMode = 'receipt';
+  }
+  mode = resolvedMode;
+  M.scan.mode = resolvedMode;
+
   const samp = M.BILL_SAMPLES[M.scan.billIdx || 0];
   const isRealPhoto = Boolean(customImage);
   const aiWorked = Boolean(M.scan.aiUsed && aiExt);

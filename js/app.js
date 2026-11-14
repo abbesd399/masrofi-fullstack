@@ -379,6 +379,7 @@ M.handleOnbStep3 = async f => {
   if (typeof M.syncCarOilItem === 'function') M.syncCarOilItem();
 
   if (M.api) {
+    if (typeof M.api.purgeDemoData === 'function') M.api.purgeDemoData(M.s);
     M.api.saveLocal(M.s);
     M.api.resetSupabaseToCleanFamily(M.s).catch(() => {});
     M.api.updateSalary(sal).catch(() => {});
@@ -554,6 +555,49 @@ if (typeof document !== 'undefined') {
   document.addEventListener('dblclick', ev => ev.preventDefault(), { passive: false });
 }
 
+/* ── Strict Numeric Input Guard: Blocks non-numeric chars & converts Eastern digits in real-time ── */
+M.getNumericMode = el => {
+  if (!el || el.tagName !== 'INPUT') return null;
+  const im = (el.getAttribute('inputmode') || '').toLowerCase();
+  const type = (el.type || '').toLowerCase();
+  if (type === 'file' || type === 'hidden' || type === 'range' || type === 'date' || type === 'checkbox') return null;
+
+  if (im === 'numeric') {
+    const name = (el.name || el.id || '').toLowerCase();
+    if (['amount', 'price', 'fuel', 'salary', 'target', 'saved', 'monthly', 'amt', 'p'].some(k => name === k || name.includes(k))) {
+      return 'decimal';
+    }
+    return 'integer';
+  }
+  if (im === 'decimal') return 'decimal';
+  if (type === 'number') return 'decimal';
+
+  const name = (el.name || el.id || '').toLowerCase();
+  const intNames = ['payday', 'dueday', 'odo', 'kmday', 'nextoil', 'carodo', 'quantity', 'q'];
+  if (intNames.some(k => name === k || name.includes(k))) return 'integer';
+  const decNames = ['salary', 'sal', 'amount', 'amt', 'price', 'fuel', 'target', 'saved', 'gtarget', 'gsaved', 'p', 'a'];
+  if (decNames.some(k => name === k || name.includes(k))) return 'decimal';
+  return null;
+};
+
+M.sanitizeNumericValue = (val, mode = 'decimal') => {
+  if (val == null) return '';
+  // Convert Eastern Arabic / Persian digits to Western (0-9)
+  let s = typeof M.toWesternDigits === 'function' ? M.toWesternDigits(String(val)) : String(val);
+  s = s.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, d => String.fromCharCode(d.charCodeAt(0) & 0x0f));
+
+  if (mode === 'integer') {
+    return s.replace(/[^\d]/g, '');
+  }
+  // Decimal: allow digits and at most one dot
+  s = s.replace(/,/g, '.').replace(/[^\d.]/g, '');
+  const dotIdx = s.indexOf('.');
+  if (dotIdx !== -1) {
+    s = s.slice(0, dotIdx + 1) + s.slice(dotIdx + 1).replace(/\./g, '');
+  }
+  return s;
+};
+
 window.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') {
     if (M.sheet?.isOpen) {
@@ -561,17 +605,87 @@ window.addEventListener('keydown', ev => {
     } else if (M.scan?.open) {
       M.closeScanner();
     }
+    return;
   }
-});
-phone.addEventListener('input', ev => {
-  if (ev.target && typeof ev.target.value === 'string' && /[\u0660-\u0669\u06F0-\u06F9]/.test(ev.target.value)) {
-    const start = ev.target.selectionStart, end = ev.target.selectionEnd;
-    ev.target.value = M.toWesternDigits(ev.target.value);
-    if (typeof start === 'number') {
-      try { ev.target.setSelectionRange(start, end); } catch {}
+
+  // Strict keyboard guard for numeric / decimal inputs
+  const el = ev.target;
+  const mode = M.getNumericMode ? M.getNumericMode(el) : null;
+  if (!mode) return;
+
+  // Allow navigation and shortcut keys
+  if (
+    ev.ctrlKey || ev.metaKey || ev.altKey ||
+    ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(ev.key)
+  ) {
+    return;
+  }
+
+  if (ev.key.length === 1) {
+    const converted = M.toWesternDigits ? M.toWesternDigits(ev.key) : ev.key;
+    if (mode === 'integer') {
+      if (!/^\d$/.test(converted)) {
+        ev.preventDefault();
+      }
+    } else if (mode === 'decimal') {
+      if (converted === '.' || converted === ',') {
+        if (el.value.includes('.')) {
+          ev.preventDefault();
+        }
+      } else if (!/^\d$/.test(converted)) {
+        ev.preventDefault();
+      }
     }
   }
-});
+}, true);
+
+// Intercept beforeinput (for virtual keyboards & autofill)
+window.addEventListener('beforeinput', ev => {
+  const el = ev.target;
+  const mode = M.getNumericMode ? M.getNumericMode(el) : null;
+  if (!mode || !ev.data) return;
+
+  const raw = M.toWesternDigits ? M.toWesternDigits(ev.data) : ev.data;
+  if (mode === 'integer' && /[^\d]/.test(raw)) {
+    ev.preventDefault();
+  } else if (mode === 'decimal') {
+    const normalized = raw.replace(/,/g, '.');
+    if (/[^\d.]/.test(normalized) || (normalized.includes('.') && el.value.includes('.'))) {
+      ev.preventDefault();
+    }
+  }
+}, true);
+
+// Real-time input sanitizer on phone & document
+phone.addEventListener('input', ev => {
+  const el = ev.target;
+  const mode = M.getNumericMode ? M.getNumericMode(el) : null;
+  if (mode && typeof el.value === 'string') {
+    const original = el.value;
+    const sanitized = M.sanitizeNumericValue(original, mode);
+    if (original !== sanitized) {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      el.value = sanitized;
+      if (typeof start === 'number') {
+        try {
+          const diff = original.length - sanitized.length;
+          el.setSelectionRange(Math.max(0, start - diff), Math.max(0, end - diff));
+        } catch {}
+      }
+    }
+    return;
+  }
+
+  // Fallback for non-numeric fields containing Eastern digits
+  if (el && typeof el.value === 'string' && /[\u0660-\u0669\u06F0-\u06F9]/.test(el.value)) {
+    const start = el.selectionStart, end = el.selectionEnd;
+    el.value = M.toWesternDigits(el.value);
+    if (typeof start === 'number') {
+      try { el.setSelectionRange(start, end); } catch {}
+    }
+  }
+}, true);
 phone.addEventListener('submit', ev => {
   ev.preventDefault();
   const f = ev.target;

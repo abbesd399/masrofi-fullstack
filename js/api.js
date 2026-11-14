@@ -127,6 +127,45 @@ M.api = {
     return typeof navigator !== 'undefined' ? navigator.onLine : true;
   },
 
+  /* ── Purge Any Lingering Demo Rows (Pharmacy, Condor, IRIS, Sonelgaz, etc.) ── */
+  purgeDemoData(st) {
+    if (!st || typeof st !== 'object') return st;
+    const demoKeywords = [
+      'صيدلية الشفاء', 'el chifa pharmacy', 'chifa',
+      'كوندور', 'condor',
+      'إيريس', 'iris',
+      'سونلغاز', 'sonelgaz',
+      'أونو هايبر', 'uno hypermarket'
+    ];
+    const isDemo = txt => {
+      if (!txt) return false;
+      const s = (typeof txt === 'object' ? `${txt.ar || ''} ${txt.en || ''}` : String(txt)).toLowerCase();
+      return demoKeywords.some(kw => s.includes(kw));
+    };
+
+    let changed = false;
+    if (Array.isArray(st.purchases)) {
+      const orig = st.purchases.length;
+      st.purchases = st.purchases.filter(p => !isDemo(p.merchant) && !isDemo(p.n));
+      if (st.purchases.length !== orig) changed = true;
+    }
+    if (Array.isArray(st.bills)) {
+      const orig = st.bills.length;
+      st.bills = st.bills.filter(b => !isDemo(b.n) && !isDemo(b.biller));
+      if (st.bills.length !== orig) changed = true;
+    }
+    if (Array.isArray(st.hikes)) {
+      st.hikes = st.hikes.filter(h => !isDemo(h.n));
+    }
+    if (changed) {
+      const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
+      if (supabaseUrl && supabaseAnonKey && st.onboarded) {
+        this.pushStateToSupabaseDirect(st).catch(() => {});
+      }
+    }
+    return st;
+  },
+
   /* ── Clear Demo Rows in Supabase & Initialize Real Family Wallet ── */
   async resetSupabaseToCleanFamily(st) {
     const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
@@ -569,11 +608,16 @@ M.api = {
       if (!data) return null;
       const sanitized = typeof M.toWesternDigits === 'function' ? M.toWesternDigits(data) : data;
       const parsed = JSON.parse(sanitized);
-      if (parsed && parsed.car) {
-        parsed.car.oilInterval = 7000;
-        const odo = Math.max(0, Number(parsed.car.odo) || 0);
-        if (odo < 7000 || Number(parsed.car.nextOil) === 10000) {
-          parsed.car.nextOil = 7000;
+      if (parsed) {
+        if (parsed.onboarded) {
+          this.purgeDemoData(parsed);
+        }
+        if (parsed.car) {
+          parsed.car.oilInterval = 7000;
+          const odo = Math.max(0, Number(parsed.car.odo) || 0);
+          if (odo < 7000 || Number(parsed.car.nextOil) === 10000) {
+            parsed.car.nextOil = 7000;
+          }
         }
       }
       return parsed;
@@ -582,19 +626,20 @@ M.api = {
     }
   },
 
-  /* ── Direct Client-Side Free AI Vision Call + AI Price-Hike Comparison Over Time ── */
-  async analyzeImageDirectAI(mode, imageDataUrl, priceHistory = []) {
+  /* ── Direct Client-Side Free AI Vision Call + AI Auto-Detection of Document Type + Price-Hike Comparison ── */
+  async analyzeImageDirectAI(mode = 'auto', imageDataUrl, priceHistory = []) {
     const cfg = this.getIntegrations();
     if (!cfg.aiApiKey || !imageDataUrl) return null;
     const historyCtx = Array.isArray(priceHistory) && priceHistory.length
       ? `\nPreviously recorded family item/bill prices for price-hike comparison over time: ${JSON.stringify(priceHistory)}.\nCompare the extracted item prices (or bill amount) against these historical prices. If any item/bill on the paper is more expensive than its historical lastPrice, include it in "detectedHikes": [{"n":{"ar":"اسم الصنف","en":"Item name"},"was":120,"now":150}].`
       : '';
     const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English receipt and bill OCR parser and price-hike detector.
-Read the exact text, numbers, store/biller name, total amount, date, and line items written on this photographed paper (${mode === 'bill' ? 'utility/service bill' : 'purchase receipt/invoice'}).${historyCtx}
-Do NOT invent fake stores. Read what is actually written on the paper and return ONLY a valid JSON object:
-If mode is "receipt":
+Read the exact text, numbers, store/biller name, total amount, date, and line items written on this photographed paper.${historyCtx}
+AUTOMATICALLY determine if this document is a purchase receipt (mode: "receipt") or a utility/service/car bill or periodic obligation (mode: "bill").
+Do NOT invent fake stores. Read what is actually written on the paper and return ONLY a valid JSON object with no markdown fences:
+If it is a purchase receipt (supermarket, grocery, store, dining, restaurant, market, shop, fuel station, goods):
 {"mode":"receipt","merchant":{"ar":"اسم المتجر أو الجهة المكتوبة في الورقة","en":"Store/Issuer name from paper"},"cat":"groceries"|"car"|"utilities"|"home"|"family"|"dining"|"health"|"net","amount":1250,"day":14,"items":[{"n":{"ar":"اسم الصنف من الورقة","en":"Item name"},"q":1,"p":1250}],"detectedHikes":[{"n":{"ar":"اسم الصنف","en":"Item name"},"was":1000,"now":1250}]}
-If mode is "bill":
+If it is a bill, periodic invoice or obligation (electricity/gas, water, telecom/internet, car insurance, maintenance, loan, school fees, rent, taxes):
 {"mode":"bill","targetId":"custom","kind":"var"|"fixed","cat":"utilities"|"car"|"net"|"family","biller":{"ar":"اسم الجهة في الفاتورة","en":"Biller name from paper"},"amount":3200,"dueDay":18,"isCurrentMonth":true,"dueText":{"ar":"تاريخ الاستحقاق من الورقة","en":"Due date from paper"},"detectedHikes":[]}`;
 
     try {
