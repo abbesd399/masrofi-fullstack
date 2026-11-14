@@ -1,4 +1,4 @@
-const CACHE_NAME = 'masrofi-cache-v3';
+const CACHE_NAME = 'masrofi-cache-v5';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -25,22 +25,17 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', event => {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(STATIC_ASSETS);
-    }).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS)).catch(() => {})
   );
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys => {
-      return Promise.all(
-        keys.map(key => {
-          if (key !== CACHE_NAME) return caches.delete(key);
-        })
-      );
-    }).then(() => self.clients.claim())
+    caches.keys().then(keys => Promise.all(
+      keys.map(key => key !== CACHE_NAME ? caches.delete(key) : Promise.resolve())
+    )).then(() => self.clients.claim())
   );
 });
 
@@ -49,32 +44,28 @@ self.addEventListener('fetch', event => {
 
   if (url.pathname.startsWith('/api')) {
     event.respondWith(
-      fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ error: 'offline', message: 'You are currently offline. Operations queued.' }), {
-          headers: { 'Content-Type': 'application/json' },
-          status: 503
-        });
-      })
+      fetch(event.request).catch(() => new Response(
+        JSON.stringify({ error: 'offline', message: 'You are currently offline. Operations queued.' }),
+        { headers: { 'Content-Type': 'application/json' }, status: 503 }
+      ))
     );
     return;
   }
 
   if (event.request.method === 'GET') {
     event.respondWith(
-      fetch(event.request).then(response => {
+      fetch(event.request, { cache: 'no-store' }).then(response => {
         if (response && response.status === 200 && response.type === 'basic') {
           const toCache = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, toCache));
         }
         return response;
-      }).catch(() => {
-        return caches.match(event.request).then(cached => {
-          if (cached) return cached;
-          if (event.request.headers.get('accept')?.includes('text/html')) {
-            return caches.match('./index.html');
-          }
-        });
-      })
+      }).catch(() => caches.match(event.request).then(cached => {
+        if (cached) return cached;
+        if (event.request.headers.get('accept')?.includes('text/html')) {
+          return caches.match('./index.html');
+        }
+      }))
     );
   }
 });

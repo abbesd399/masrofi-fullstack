@@ -5,9 +5,9 @@
   <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
+	<string>ar</string>
 	<key>CFBundleDisplayName</key>
-        <string>Masrofi · مصروفي</string>
+        <string>مصروفي · Masrofi</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -54,8 +54,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
@@ -67,10 +65,12 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Masrofi needs camera access to scan and parse purchase receipts and paper utility bills.</string>
+	<string>يحتاج تطبيق مصروفي إلى صلاحية الكاميرا لتصوير وقراءة الفواتير ووصولات المشتريات مباشرة داخل التطبيق.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>يحتاج تطبيق مصروفي إلى الكاميرا لالتقاط صور الفواتير داخل التطبيق.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Masrofi needs photo library access to import and analyze receipt photos.</string>
+	<string>يحتاج تطبيق مصروفي إلى صلاحية معرض الصور لاختيار صور الفواتير والوصولات وتحليلها بالذكاء الاصطناعي.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Masrofi needs access to save processed receipt images.</string>
+	<string>يحتاج تطبيق مصروفي إلى حفظ صور الفواتير الممسوحة.</string>
 </dict>
 </plist>

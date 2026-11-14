@@ -1,7 +1,7 @@
 /**
  * Scanner AI Service: Extract & Auto-Route Receipts and Utility/Car Bills
  * Supports:
- *   1. Official Free Google Gemini Vision API (gemini-2.5-flash)
+ *   1. Official Free Google Gemini Vision API (gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash)
  *   2. Official Free Groq Vision API (meta-llama/llama-4-scout-17b-16e-instruct)
  *   3. OpenRouter Free Vision Models (google/gemini-2.0-flash-exp:free)
  *   4. Instant Offline Algerian Receipt/Bill Smart Heuristic Engine (Zero-downtime fallback)
@@ -89,7 +89,7 @@ function parseMultipartBuffer(buffer, boundary) {
 }
 
 /**
- * Call free AI Vision / LLM API (Gemini 2.5 Flash / Groq / OpenRouter) when configured
+ * Call free AI Vision / LLM API (Gemini 2.5 Flash / Gemini 2.0 Flash / Groq / OpenRouter) when configured
  * and an image or OCR text is provided. Never throws: falls back to local parser on any error.
  */
 async function analyzeWithFreeAI(body, aiCfg) {
@@ -99,16 +99,16 @@ async function analyzeWithFreeAI(body, aiCfg) {
   if (!hasRealImage && !hasText) return null;
 
   const mode = body.mode || 'receipt';
-  const sysPrompt = `You are Masrofi AI, an Algerian family finance receipt and bill parser.
-Extract details from the provided ${mode === 'bill' ? 'utility/car bill' : 'purchase receipt'} and return ONLY a valid JSON object with no markdown fences:
+  const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English receipt and bill OCR parser.
+Read the exact text, numbers, store/biller name, total amount, date, and line items written on the provided ${mode === 'bill' ? 'utility/car bill' : 'purchase receipt'} and return ONLY a valid JSON object with no markdown fences:
 If mode is "receipt":
 {
   "mode": "receipt",
-  "merchant": { "ar": "Arabic store name", "en": "English/French store name" },
+  "merchant": { "ar": "اسم المتجر المكتوب في الورقة", "en": "Store name from paper" },
   "cat": "groceries" | "car" | "utilities" | "home" | "family" | "dining" | "health" | "net",
   "amount": 3450,
   "day": 10,
-  "items": [{ "n": { "ar": "اسم الصنف", "en": "Item name" }, "q": 1, "p": 3450 }]
+  "items": [{ "n": { "ar": "اسم الصنف من الورقة", "en": "Item name" }, "q": 1, "p": 3450 }]
 }
 If mode is "bill":
 {
@@ -128,7 +128,6 @@ If mode is "bill":
     let rawJsonText = '';
 
     if (provider === 'gemini') {
-      const model = aiCfg.aiModel || 'gemini-2.5-flash';
       const parts = [{ text: sysPrompt + (hasText ? `\nOCR Text: ${body.text || body.ocrText}` : '') }];
       if (hasRealImage) {
         const commaIdx = body.image.indexOf(',');
@@ -142,20 +141,28 @@ If mode is "bill":
         'x-goog-api-key': aiCfg.aiApiKey,
         ...(isBearer ? { Authorization: `Bearer ${aiCfg.aiApiKey}` } : {})
       };
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(aiCfg.aiApiKey)}`;
-      const res = await jsonRequest(url, {
-        method: 'POST',
-        headers,
-        body: {
-          contents: [{ parts }],
-          generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
-        }
-      });
-      if (res.ok && res.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-        rawJsonText = res.data.candidates[0].content.parts[0].text;
+      const models = [aiCfg.aiModel || 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+      const seen = new Set();
+      for (const model of models) {
+        if (!model || seen.has(model)) continue;
+        seen.add(model);
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(aiCfg.aiApiKey)}`;
+          const res = await jsonRequest(url, {
+            method: 'POST',
+            headers,
+            body: {
+              contents: [{ parts }],
+              generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
+            }
+          });
+          if (res.ok && res.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            rawJsonText = res.data.candidates[0].content.parts[0].text;
+            break;
+          }
+        } catch {}
       }
     } else {
-      // OpenAI-compatible Vision endpoint (Groq or OpenRouter)
       const isGroq = provider === 'groq';
       const endpoint = isGroq
         ? 'https://api.groq.com/openai/v1/chat/completions'
@@ -197,7 +204,6 @@ function parseScanRequest(body) {
   let sampleIdx = Number(body.sampleIdx !== undefined ? body.sampleIdx : 0);
   const customId = body.id !== undefined && !isNaN(body.id) ? Number(body.id) : undefined;
 
-  // Extract text safely from various potential fields without [object Object] serialization
   let rawText = '';
   for (const field of [body.text, body.ocrText, body.caption, body.filename, body.title]) {
     if (!field) continue;
@@ -206,7 +212,6 @@ function parseScanRequest(body) {
     }
   }
 
-  // Handle biller / merchant passed as strings or bilingual objects
   let merchantStr = '';
   if (body.merchant) {
     if (typeof body.merchant === 'string') merchantStr += ' ' + body.merchant;
@@ -224,7 +229,6 @@ function parseScanRequest(body) {
 
   const combinedText = (rawText + ' ' + merchantStr + ' ' + billerStr).toLowerCase();
 
-  // Target ID mapping takes precedence if specified
   const target = (body.targetId || '').toString().toLowerCase();
   if (target === 'elec' || target === 'sonelgaz') {
     mode = 'bill';
@@ -246,7 +250,6 @@ function parseScanRequest(body) {
     sampleIdx = 2;
   }
 
-  // Extract amount if not explicitly provided
   let extractedAmount = (body.amount !== undefined && !isNaN(body.amount) && Number(body.amount) > 0) ? Number(body.amount) : null;
   if (extractedAmount === null) {
     const amtMatch = combinedText.match(/\b(\d{1,3}(?:[,\s]\d{3})*(?:\.\d+)?|\d+)\s*(?:da|dzd|د\.ج|دج)?/i);
@@ -256,7 +259,6 @@ function parseScanRequest(body) {
     }
   }
 
-  // Extract date / day if found
   let extractedDay = body.day !== undefined ? Number(body.day) : 10;
   let extractedDate = body.date || '10/11/2026';
   const dateMatch = combinedText.match(/\b(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?\b/);
@@ -290,7 +292,6 @@ function parseScanRequest(body) {
     };
   }
 
-  // Receipt mode: determine merchant & category
   const amount = extractedAmount !== null ? extractedAmount : 3450;
   let merchant = body.merchant;
   let cat = body.cat;
@@ -383,9 +384,6 @@ function routeAndPersist(db, parsed) {
     };
   }
 
-  // Bill mode:
-  // Case A: Current-month variable bill (Sonelgaz electricity/gas or SEAAL water)
-  // Automatically update the matching bill's amount in `bills`!
   if (extracted.isCurrentMonth) {
     const existingBills = db.getState().bills;
     const existing = existingBills.find(b => b.id === extracted.targetId);
@@ -421,8 +419,6 @@ function routeAndPersist(db, parsed) {
     };
   }
 
-  // Case B: Future/car bill (e.g. SAA insurance renewal)
-  // Automatically save into `scheduled` and `carItems`!
   const targetId = extracted.targetId || 'ins2';
   const schedBill = db.saveBill({
     id: targetId,
@@ -436,7 +432,6 @@ function routeAndPersist(db, parsed) {
     remStr: sample?.remStr || { ar: 'تذكير 1 ديسمبر', en: 'Reminder Dec 1' }
   });
 
-  // Also add or update car item
   const currentCarItems = db.getState().carItems;
   const amtFormatted = Number(extracted.amount).toLocaleString('en-US');
   const existingCarIdx = currentCarItems.findIndex(ci => ci.id === targetId);

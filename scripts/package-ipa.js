@@ -15,11 +15,9 @@ if (fs.existsSync(ipaOutput)) fs.unlinkSync(ipaOutput);
 
 fs.mkdirSync(appDir, { recursive: true });
 
-// 1. Copy Web Assets from www
+// 1. Always rebuild www/ from latest root files first
+execSync('node scripts/build.js', { cwd: rootDir, stdio: 'inherit' });
 const wwwDir = path.join(rootDir, 'www');
-if (!fs.existsSync(wwwDir)) {
-  execSync('node scripts/build.js', { cwd: rootDir, stdio: 'inherit' });
-}
 
 function copyRecursive(src, dest) {
   if (!fs.existsSync(src)) return;
@@ -50,26 +48,25 @@ if (fs.existsSync(plistSrc)) {
 }
 
 // 3. Icons
-const iconSrc = path.join(rootDir, 'icons', 'icon-512.png');
+const iconSrc = fs.existsSync(path.join(rootDir, 'assets', 'icon-512.png'))
+  ? path.join(rootDir, 'assets', 'icon-512.png')
+  : path.join(rootDir, 'icons', 'icon-512.png');
 if (fs.existsSync(iconSrc)) {
   fs.copyFileSync(iconSrc, path.join(appDir, 'AppIcon60x60@2x.png'));
   fs.copyFileSync(iconSrc, path.join(appDir, 'AppIcon60x60@3x.png'));
 }
 
-// 4. Compress using .NET ZipFile to produce authentic PKZIP
+// 4. Compress using PowerShell on Windows or Python zipfile on Linux/macOS
 console.log('Compressing with authentic PKZIP headers...');
-const psScript = `Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory('${tempRoot.replace(/\\/g, '/')}', '${ipaOutput.replace(/\\/g, '/')}')`;
-execSync(`powershell -NoProfile -Command "${psScript}"`, { cwd: rootDir, stdio: 'inherit' });
-
-// Copy to masrofi-fullstack as well
-const subDirIpa = path.join(rootDir, 'masrofi-fullstack', 'Masrofi.ipa');
-if (fs.existsSync(path.dirname(subDirIpa))) {
-  fs.copyFileSync(ipaOutput, subDirIpa);
+if (process.platform === 'win32') {
+  const psScript = `Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory('${tempRoot.replace(/\\/g, '/')}', '${ipaOutput.replace(/\\/g, '/')}')`;
+  execSync(`powershell -NoProfile -Command "${psScript}"`, { cwd: rootDir, stdio: 'inherit' });
+} else {
+  execSync(`python3 -c "import shutil; shutil.make_archive('${ipaOutput.replace(/\.ipa$/, '')}', 'zip', '${tempRoot}'); import os; os.rename('${ipaOutput.replace(/\.ipa$/, '.zip')}', '${ipaOutput}')"`, { cwd: rootDir, stdio: 'inherit' });
 }
 
 console.log(`✓ Masrofi.ipa created successfully at: ${ipaOutput}`);
 
-// Clean temp directory
 if (fs.existsSync(tempRoot)) {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }

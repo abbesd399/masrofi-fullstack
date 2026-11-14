@@ -2,16 +2,17 @@
 <html lang="ar">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0D9488">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0F766E">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Masrofi · مصروفي — UI Preview Studio</title>
+<meta name="apple-mobile-web-app-title" content="مصروفي">
+<meta name="format-detection" content="telephone=no">
+<title>Masrofi · مصروفي</title>
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="assets/icon-192.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300..700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
 <link rel="stylesheet" href="css/studio.css">
 <link rel="stylesheet" href="css/theme.css">
 <link rel="stylesheet" href="css/components.css">
@@ -79,15 +80,15 @@
       </button>
       <button class="sim" data-sim="billscan">
         <i class="sim-ic info"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M7 12h10"/></svg></i>
-        <span>Simulate AI Paper Bill Scan<small>Auto-reads due date &amp; price</small></span>
+        <span>Open In-App AI Scanner</span>
       </button>
       <button class="sim" data-sim="purchase">
         <i class="sim-ic safe"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.5l2.2 10.5h10.8l2-7.5H6.2"/><circle cx="9.5" cy="19.5" r="1.5"/><circle cx="17.5" cy="19.5" r="1.5"/></svg></i>
-        <span>Simulate Family Member Purchase<small>Repeat to push the gauge to amber / coral</small></span>
+        <span>Simulate Family Member Purchase</span>
       </button>
       <button class="sim ghost" data-sim="reset">
         <i class="sim-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></i>
-        <span>Reset demo data</span>
+        <span>Load demo data</span>
       </button>
     </section>
 
@@ -113,13 +114,14 @@
           <div class="scrim" id="scrim"></div>
           <div class="sheet" id="sheet" role="dialog"></div>
           <div class="scanner" id="scanner"></div>
+          <div class="onboarding" id="onboarding"></div>
           <div class="notif" id="notif"></div>
           <div class="toast" id="toast"></div>
           <div class="home-ind"></div>
         </div>
       </div>
     </div>
-    <p class="stage-hint">Everything inside the phone is interactive — cards open bottom sheets, the eye icon blurs the balance, the camera opens the AI scanner, and the grocery cart lets you enter your own item names &amp; prices.</p>
+    <p class="stage-hint">Everything inside the phone is interactive — cards open bottom sheets, the eye icon blurs the balance, the camera opens the live in-app AI scanner, and the grocery cart lets you enter your own item names &amp; prices.</p>
   </main>
 </div>
 
@@ -136,11 +138,17 @@
 <script src="js/scanner.js"></script>
 <script src="js/app.js"></script>
 <script>
-  if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(e => console.log('SW register failed:', e));
-    });
-  }
+  window.addEventListener('load', () => {
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+    if (navigator.onLine) {
+      const l = document.createElement('link');
+      l.rel = 'stylesheet';
+      l.href = 'https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300..700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&display=swap';
+      document.head.appendChild(l);
+    }
+  });
 </script>
 </body>
 </html>

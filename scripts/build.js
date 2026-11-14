@@ -52,17 +52,20 @@ function build() {
     fs.copyFileSync(srcIcon512, iosIcon);
   }
 
-  // Sync icons to Android mipmaps
+  // Ensure Android mipmap icons exist without overwriting exact-DPI icons if already present
   const srcIcon192 = path.join(ROOT, 'assets', 'icon-192.png');
   const androidRes = path.join(ROOT, 'android', 'app', 'src', 'main', 'res');
-  if (fs.existsSync(androidRes)) {
+  if (fs.existsSync(androidRes) && fs.existsSync(srcIcon192)) {
     const mipmaps = ['mipmap-hdpi', 'mipmap-mdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
     for (const mm of mipmaps) {
       const mmDir = path.join(androidRes, mm);
       if (fs.existsSync(mmDir)) {
-        fs.copyFileSync(srcIcon192, path.join(mmDir, 'ic_launcher.png'));
-        fs.copyFileSync(srcIcon192, path.join(mmDir, 'ic_launcher_round.png'));
-        fs.copyFileSync(srcIcon192, path.join(mmDir, 'ic_launcher_foreground.png'));
+        for (const f of ['ic_launcher.png', 'ic_launcher_round.png', 'ic_launcher_foreground.png']) {
+          const target = path.join(mmDir, f);
+          if (!fs.existsSync(target)) {
+            fs.copyFileSync(srcIcon192, target);
+          }
+        }
       }
     }
   }

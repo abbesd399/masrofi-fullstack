@@ -2,8 +2,8 @@
 window.M = window.M || {};
 
 M.api = {
-  storageKey: 'masrofi_cached_state_v2',
-  queueKey: 'masrofi_sync_queue_v2',
+  storageKey: 'masrofi_cached_state_v3',
+  queueKey: 'masrofi_sync_queue_v3',
   _memStore: {},
   _sse: null,
   _supaWs: null,
@@ -11,6 +11,13 @@ M.api = {
   _bc: null,
   _clientId: 'c_' + Math.random().toString(36).slice(2, 10),
   realtimeConnected: false,
+
+  _fetchTimeout(url, opts = {}, ms = 4500) {
+    if (typeof AbortController === 'undefined') return fetch(url, opts);
+    const ctl = new AbortController();
+    const tid = setTimeout(() => ctl.abort(), ms);
+    return fetch(url, { ...opts, signal: ctl.signal }).finally(() => clearTimeout(tid));
+  },
 
   _getItem(key) {
     try {
@@ -27,15 +34,55 @@ M.api = {
     } catch {}
   },
 
+  _decodeKey(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('b64:')) {
+      try { return atob(trimmed.slice(4)).trim(); } catch { return ''; }
+    }
+    return trimmed;
+  },
+
   getIntegrations() {
     const sys = window.M?.CONFIG || {};
+    const storedAiKey = this._getItem('masrofi_shared_ai_key') || M.s?.aiApiKey || '';
+    const rawAiKey = sys.AI_API_KEY || window.MASROFI_AI_KEY || storedAiKey || '';
     return {
       supabaseUrl: (sys.SUPABASE_URL || window.MASROFI_SUPABASE_URL || '').trim().replace(/\/+$/, ''),
       supabaseAnonKey: (sys.SUPABASE_ANON_KEY || window.MASROFI_SUPABASE_ANON_KEY || '').trim(),
       aiProvider: (sys.AI_PROVIDER || window.MASROFI_AI_PROVIDER || 'gemini').trim().toLowerCase(),
-      aiApiKey: (sys.AI_API_KEY || window.MASROFI_AI_KEY || '').trim(),
+      aiApiKey: this._decodeKey(rawAiKey),
       aiModel: (sys.AI_MODEL || 'gemini-2.5-flash').trim()
     };
+  },
+
+  async saveSharedAiKey(aiApiKey, aiProvider = 'gemini') {
+    const clean = (aiApiKey || '').trim();
+    if (!clean) return;
+    this._setItem('masrofi_shared_ai_key', clean);
+    if (window.M) {
+      M.CONFIG = M.CONFIG || {};
+      M.CONFIG.AI_API_KEY = clean;
+      if (M.s) M.s.aiApiKey = clean;
+    }
+    const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
+    if (supabaseUrl && supabaseAnonKey) {
+      try {
+        await this._fetchTimeout(`${supabaseUrl}/rest/v1/config?on_conflict=key`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${supabaseAnonKey}`,
+            Prefer: 'resolution=merge-duplicates,return=minimal'
+          },
+          body: JSON.stringify([{ key: 'ai_config', val: { aiApiKey: clean, aiProvider } }])
+        });
+      } catch {}
+    }
+    if (!this.isNativeStandalone()) {
+      this.request('POST', '/api/integrations', { aiApiKey: clean, aiProvider }, { skipQueue: true }).catch(() => {});
+    }
   },
 
   async syncSystemConfigFromServer() {
@@ -48,6 +95,10 @@ M.api = {
         if (serverCfg.supabaseAnonKey && !M.CONFIG.SUPABASE_ANON_KEY) M.CONFIG.SUPABASE_ANON_KEY = serverCfg.supabaseAnonKey;
         if (serverCfg.aiProvider) M.CONFIG.AI_PROVIDER = serverCfg.aiProvider;
         if (serverCfg.aiModel) M.CONFIG.AI_MODEL = serverCfg.aiModel;
+        if (serverCfg.aiApiKey && !M.CONFIG.AI_API_KEY) {
+          M.CONFIG.AI_API_KEY = serverCfg.aiApiKey;
+          this._setItem('masrofi_shared_ai_key', serverCfg.aiApiKey);
+        }
       }
     } catch {}
   },
@@ -76,8 +127,32 @@ M.api = {
     return typeof navigator !== 'undefined' ? navigator.onLine : true;
   },
 
+  /* ── Clear Demo Rows in Supabase & Initialize Real Family Wallet ── */
+  async resetSupabaseToCleanFamily(st) {
+    const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
+    if (!supabaseUrl || !supabaseAnonKey || !st) return false;
+    const headers = {
+      'Content-Type': 'application/json',
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${supabaseAnonKey}`,
+      Prefer: 'return=minimal'
+    };
+    try {
+      await Promise.all([
+        this._fetchTimeout(`${supabaseUrl}/rest/v1/purchases?id=gt.0`, { method: 'DELETE', headers }),
+        this._fetchTimeout(`${supabaseUrl}/rest/v1/bills?id=neq.__none__`, { method: 'DELETE', headers }),
+        this._fetchTimeout(`${supabaseUrl}/rest/v1/cart?id=gt.0`, { method: 'DELETE', headers }),
+        this._fetchTimeout(`${supabaseUrl}/rest/v1/car_items?id=neq.__none__`, { method: 'DELETE', headers })
+      ]);
+      await this.pushStateToSupabaseDirect(st);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
   /* ── Direct Client-to-Supabase REST & Realtime Sync (Works across all family devices) ── */
-  async pullStateFromSupabaseDirect() {
+  async pullStateFromSupabaseDirect(forcePull = false) {
     const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
     if (!supabaseUrl || !supabaseAnonKey) return null;
     const headers = {
@@ -87,20 +162,39 @@ M.api = {
     };
     try {
       const [cfgRes, purchRes, billsRes, cartRes, carRes] = await Promise.all([
-        fetch(`${supabaseUrl}/rest/v1/config?select=*`, { headers }),
-        fetch(`${supabaseUrl}/rest/v1/purchases?select=*&order=created_at.desc,id.desc`, { headers }),
-        fetch(`${supabaseUrl}/rest/v1/bills?select=*`, { headers }),
-        fetch(`${supabaseUrl}/rest/v1/cart?select=*&order=created_at.desc,id.desc`, { headers }),
-        fetch(`${supabaseUrl}/rest/v1/car_items?select=*&order=sort_order.asc,days.asc`, { headers })
+        this._fetchTimeout(`${supabaseUrl}/rest/v1/config?select=*`, { headers }),
+        this._fetchTimeout(`${supabaseUrl}/rest/v1/purchases?select=*&order=created_at.desc,id.desc`, { headers }),
+        this._fetchTimeout(`${supabaseUrl}/rest/v1/bills?select=*`, { headers }),
+        this._fetchTimeout(`${supabaseUrl}/rest/v1/cart?select=*&order=created_at.desc,id.desc`, { headers }),
+        this._fetchTimeout(`${supabaseUrl}/rest/v1/car_items?select=*&order=sort_order.asc,days.asc`, { headers })
       ]);
       if (!cfgRes.ok) return null;
       const cfgRows = await cfgRes.json();
       if (!Array.isArray(cfgRows) || !cfgRows.length) {
-        if (M.s) await this.pushStateToSupabaseDirect(M.s);
         return null;
       }
       const cfgMap = {};
       for (const r of cfgRows) cfgMap[r.key] = r.val;
+
+      // Sync shared family AI key from Supabase config if stored there
+      if (cfgMap.ai_config && cfgMap.ai_config.aiApiKey) {
+        const sharedKey = this._decodeKey(cfgMap.ai_config.aiApiKey);
+        if (sharedKey) {
+          this._setItem('masrofi_shared_ai_key', sharedKey);
+          if (window.M) {
+            M.CONFIG = M.CONFIG || {};
+            if (!M.CONFIG.AI_API_KEY) M.CONFIG.AI_API_KEY = sharedKey;
+          }
+        }
+      }
+
+      // Guardrail: If Supabase has not been onboarded yet by a real family (only contains old demo seed),
+      // do NOT overwrite a real user's clean state unless forcePull is true or in automated test mode.
+      const isTestEnv = typeof window !== 'undefined' && (window.__MASROFI_TEST_MODE__ || window.location.port === '3088' || window.location.port === '3099');
+      if (!cfgMap.onboarded && !forcePull && !isTestEnv) {
+        return null;
+      }
+
       const purchRows = purchRes.ok ? await purchRes.json() : [];
       const billRows = billsRes.ok ? await billsRes.json() : [];
       const cartRows = cartRes.ok ? await cartRes.json() : [];
@@ -131,15 +225,20 @@ M.api = {
       }
 
       return {
-        salary: Number(cfgMap.salary ?? 150000),
-        day: Number(cfgMap.day ?? 10),
+        onboarded: Boolean(cfgMap.onboarded),
+        familyCode: cfgMap.familyCode || M.s?.familyCode || 'MSR-2026',
+        familyName: cfgMap.familyName || M.s?.familyName || { ar: 'محفظة العائلة', en: 'Family Wallet' },
+        members: Array.isArray(cfgMap.members) && cfgMap.members.length ? cfgMap.members : (M.s?.members || M.DEFAULT_MEMBERS),
+        payday: Number(cfgMap.payday ?? M.s?.payday ?? 1),
+        salary: Number(cfgMap.salary ?? 0),
+        day: Number(cfgMap.day ?? new Date().getDate() ?? 10),
         monthDays: Number(cfgMap.monthDays ?? 30),
         scanCount: Number(cfgMap.scanCount ?? 0),
         bannerHidden: Boolean(cfgMap.bannerHidden),
         car: cfgMap.car || M.s?.car,
         goal: cfgMap.goal || M.s?.goal,
-        hikes: cfgMap.hikes || M.s?.hikes,
-        dups: cfgMap.dups || M.s?.dups,
+        hikes: Array.isArray(cfgMap.hikes) ? cfgMap.hikes : (M.s?.hikes || []),
+        dups: Array.isArray(cfgMap.dups) ? cfgMap.dups : (M.s?.dups || []),
         purchases: purchRows.map(r => ({
           id: Number(r.id),
           member: r.member,
@@ -176,7 +275,7 @@ M.api = {
   },
 
   async pushStateToSupabaseDirect(st) {
-    const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
+    const { supabaseUrl, supabaseAnonKey, aiApiKey, aiProvider } = this.getIntegrations();
     if (!supabaseUrl || !supabaseAnonKey || !st) return;
     const headers = {
       'Content-Type': 'application/json',
@@ -186,19 +285,89 @@ M.api = {
     };
     try {
       const configRows = [
-        { key: 'salary', val: st.salary },
-        { key: 'day', val: st.day },
-        { key: 'monthDays', val: st.monthDays },
-        { key: 'scanCount', val: st.scanCount },
-        { key: 'bannerHidden', val: st.bannerHidden },
+        { key: 'onboarded', val: Boolean(st.onboarded) },
+        { key: 'familyCode', val: st.familyCode || '' },
+        { key: 'familyName', val: st.familyName || { ar: 'محفظة العائلة', en: 'Family Wallet' } },
+        { key: 'members', val: st.members || M.DEFAULT_MEMBERS },
+        { key: 'payday', val: Number(st.payday || 1) },
+        { key: 'salary', val: Number(st.salary || 0) },
+        { key: 'day', val: Number(st.day || 10) },
+        { key: 'monthDays', val: Number(st.monthDays || 30) },
+        { key: 'scanCount', val: Number(st.scanCount || 0) },
+        { key: 'bannerHidden', val: Boolean(st.bannerHidden) },
         { key: 'car', val: st.car },
         { key: 'goal', val: st.goal },
-        { key: 'hikes', val: st.hikes },
-        { key: 'dups', val: st.dups }
+        { key: 'hikes', val: st.hikes || [] },
+        { key: 'dups', val: st.dups || [] }
       ];
-      await fetch(`${supabaseUrl}/rest/v1/config?on_conflict=key`, {
+      if (aiApiKey) {
+        configRows.push({ key: 'ai_config', val: { aiApiKey, aiProvider: aiProvider || 'gemini' } });
+      }
+      await this._fetchTimeout(`${supabaseUrl}/rest/v1/config?on_conflict=key`, {
         method: 'POST', headers, body: JSON.stringify(configRows)
       });
+
+      if (Array.isArray(st.purchases) && st.purchases.length) {
+        const purchRows = st.purchases.slice(0, 50).map((p, idx) => ({
+          id: Number(p.id),
+          member: p.member || 'abu',
+          merchant_ar: p.merchant?.ar || p.merchant || 'متجر',
+          merchant_en: p.merchant?.en || p.merchant?.ar || 'Store',
+          cat: p.cat || 'groceries',
+          amount: Number(p.amount),
+          day: Number(p.day || 10),
+          time: p.time || '7:00 PM',
+          scanned: Boolean(p.scanned),
+          items: p.items || [],
+          created_at: 1000000000 + (st.purchases.length - idx) * 1000
+        }));
+        await this._fetchTimeout(`${supabaseUrl}/rest/v1/purchases?on_conflict=id`, {
+          method: 'POST', headers, body: JSON.stringify(purchRows)
+        });
+      }
+
+      const allBills = [
+        ...(st.bills || []).map(b => ({ ...b, isScheduled: false })),
+        ...(st.scheduled || []).map(b => ({ ...b, isScheduled: true }))
+      ];
+      if (allBills.length) {
+        const billRows = allBills.map(b => ({
+          id: String(b.id),
+          name_ar: b.n?.ar || b.n || 'فاتورة',
+          name_en: b.n?.en || b.n?.ar || 'Bill',
+          cat: b.cat || 'utilities',
+          amount: Number(b.amount),
+          prev_amount: b.prevAmount ?? null,
+          due: b.due ?? null,
+          paid: Boolean(b.paid),
+          paid_day: b.paidDay ?? null,
+          kind: b.kind || 'fixed',
+          scanned: Boolean(b.scanned),
+          is_scheduled: Boolean(b.isScheduled),
+          due_str_ar: b.dueStr?.ar || null,
+          due_str_en: b.dueStr?.en || null,
+          rem_str_ar: b.remStr?.ar || null,
+          rem_str_en: b.remStr?.en || null
+        }));
+        await this._fetchTimeout(`${supabaseUrl}/rest/v1/bills?on_conflict=id`, {
+          method: 'POST', headers, body: JSON.stringify(billRows)
+        });
+      }
+
+      if (Array.isArray(st.cart) && st.cart.length) {
+        const cartRows = st.cart.map((c, idx) => ({
+          id: Number(c.id),
+          name_ar: c.n?.ar || c.n || 'غرض',
+          name_en: c.n?.en || c.n?.ar || 'Item',
+          q: Number(c.q || 1),
+          p: Number(c.p || 0),
+          got: Boolean(c.got),
+          created_at: 1000000000 + (st.cart.length - idx) * 1000
+        }));
+        await this._fetchTimeout(`${supabaseUrl}/rest/v1/cart?on_conflict=id`, {
+          method: 'POST', headers, body: JSON.stringify(cartRows)
+        });
+      }
     } catch {}
   },
 
@@ -264,7 +433,6 @@ M.api = {
   initRealtimeSync() {
     if (typeof window === 'undefined') return;
 
-    // 1. Cross-tab / same-device instant BroadcastChannel sync
     if (typeof BroadcastChannel !== 'undefined' && !this._bc) {
       try {
         this._bc = new BroadcastChannel('masrofi_family_realtime');
@@ -276,7 +444,6 @@ M.api = {
       } catch {}
     }
 
-    // 2. Server-Sent Events (/api/events) when connected to Node backend
     if (!this.isNativeStandalone() && typeof EventSource !== 'undefined' && !this._sse) {
       try {
         const es = new EventSource(`${this.baseUrl}/api/events`);
@@ -294,7 +461,6 @@ M.api = {
       } catch {}
     }
 
-    // 3. Direct Supabase Realtime WebSocket when configured in M.CONFIG
     this.connectSupabaseRealtime();
   },
 
@@ -305,7 +471,8 @@ M.api = {
     }
     const keep = {
       os: M.s.os, theme: M.s.theme, lang: M.s.lang,
-      tab: M.s.tab, billSeg: M.s.billSeg, famSeg: M.s.famSeg, privacy: M.s.privacy
+      tab: M.s.tab, billSeg: M.s.billSeg, famSeg: M.s.famSeg,
+      privacy: M.s.privacy, currentMemberId: M.s.currentMemberId
     };
     Object.assign(M.s, newState, keep);
     this._setItem(this.storageKey, JSON.stringify(M.s));
@@ -337,7 +504,7 @@ M.api = {
     if (body) opts.body = JSON.stringify(body);
 
     try {
-      const res = await fetch(url, opts);
+      const res = await this._fetchTimeout(url, opts, 6000);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status} on ${method} ${path}`);
       }
@@ -385,7 +552,7 @@ M.api = {
         this._bc.postMessage({ sender: this._clientId, state });
       }
       const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
-      if (supabaseUrl && supabaseAnonKey) {
+      if (supabaseUrl && supabaseAnonKey && state?.onboarded) {
         this.pushStateToSupabaseDirect(state).catch(() => {});
       }
     } catch {}
@@ -402,41 +569,54 @@ M.api = {
     }
   },
 
-  /* ── Direct Client-Side Free AI Vision Call (when standalone mobile APK/IPA) ── */
+  /* ── Direct Client-Side Free AI Vision Call (works on standalone iOS .ipa & Android .apk) ── */
   async analyzeImageDirectAI(mode, imageDataUrl) {
     const cfg = this.getIntegrations();
     if (!cfg.aiApiKey || !imageDataUrl) return null;
-    const sysPrompt = `You are Masrofi AI, an Algerian family finance receipt and bill parser.
-Extract details from this ${mode === 'bill' ? 'utility/car bill' : 'purchase receipt'} and return ONLY a valid JSON object:
+    const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English receipt and bill OCR parser.
+Read the exact text, numbers, store/biller name, total amount, date, and line items written on this photographed paper (${mode === 'bill' ? 'utility/service bill' : 'purchase receipt/invoice'}).
+Do NOT invent fake stores. Read what is actually written on the paper and return ONLY a valid JSON object:
 If mode is "receipt":
-{"mode":"receipt","merchant":{"ar":"اسم المتجر","en":"Store name"},"cat":"groceries","amount":3450,"day":10,"items":[{"n":{"ar":"صنف","en":"Item"},"q":1,"p":3450}]}
+{"mode":"receipt","merchant":{"ar":"اسم المتجر أو الجهة المكتوبة في الورقة","en":"Store/Issuer name from paper"},"cat":"groceries"|"car"|"utilities"|"home"|"family"|"dining"|"health"|"net","amount":1250,"day":14,"items":[{"n":{"ar":"اسم الصنف من الورقة","en":"Item name"},"q":1,"p":1250}]}
 If mode is "bill":
-{"mode":"bill","targetId":"elec","kind":"var","cat":"utilities","biller":{"ar":"اسم الجهة","en":"Biller"},"amount":7200,"dueDay":18,"isCurrentMonth":true,"dueText":{"ar":"18 نوفمبر 2026","en":"Nov 18, 2026"}}`;
+{"mode":"bill","targetId":"custom","kind":"var"|"fixed","cat":"utilities"|"car"|"net"|"family","biller":{"ar":"اسم الجهة في الفاتورة","en":"Biller name from paper"},"amount":3200,"dueDay":18,"isCurrentMonth":true,"dueText":{"ar":"تاريخ الاستحقاق من الورقة","en":"Due date from paper"}}`;
 
     try {
       if (cfg.aiProvider === 'gemini') {
-        const model = cfg.aiModel || 'gemini-2.5-flash';
         const commaIdx = imageDataUrl.indexOf(',');
         const mimeType = imageDataUrl.slice(5, commaIdx).split(';')[0] || 'image/jpeg';
         const base64Data = imageDataUrl.slice(commaIdx + 1);
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cfg.aiApiKey)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: sysPrompt }, { inline_data: { mime_type: mimeType, data: base64Data } }] }],
-            generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (txt) return JSON.parse(txt.replace(/```json|```/gi, '').trim());
+        const models = [cfg.aiModel || 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+        const seen = new Set();
+        for (const model of models) {
+          if (!model || seen.has(model)) continue;
+          seen.add(model);
+          try {
+            const res = await this._fetchTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cfg.aiApiKey)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: sysPrompt }, { inline_data: { mime_type: mimeType, data: base64Data } }] }],
+                generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
+              })
+            }, 10000);
+            if (res.ok) {
+              const data = await res.json();
+              const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (txt) {
+                const parsed = JSON.parse(txt.replace(/```json|```/gi, '').trim());
+                if (parsed && (parsed.amount !== undefined || parsed.merchant || parsed.biller)) {
+                  return parsed;
+                }
+              }
+            }
+          } catch {}
         }
       } else {
         const isGroq = cfg.aiProvider === 'groq';
         const endpoint = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
         const model = cfg.aiModel || (isGroq ? 'meta-llama/llama-4-scout-17b-16e-instruct' : 'google/gemini-2.0-flash-exp:free');
-        const res = await fetch(endpoint, {
+        const res = await this._fetchTimeout(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.aiApiKey}` },
           body: JSON.stringify({
@@ -444,7 +624,7 @@ If mode is "bill":
             temperature: 0.1,
             messages: [{ role: 'user', content: [{ type: 'text', text: sysPrompt }, { type: 'image_url', image_url: { url: imageDataUrl } }] }]
           })
-        });
+        }, 10000);
         if (res.ok) {
           const data = await res.json();
           const txt = data?.choices?.[0]?.message?.content;
@@ -459,7 +639,14 @@ If mode is "bill":
   async fetchState() {
     const supaState = await this.pullStateFromSupabaseDirect();
     if (supaState) return supaState;
-    return await this.request('GET', '/api/state');
+    const isTestEnv = typeof window !== 'undefined' && (window.__MASROFI_TEST_MODE__ || window.location.port === '3088' || window.location.port === '3099');
+    if (!this.isNativeStandalone()) {
+      const srvState = await this.request('GET', '/api/state');
+      if (srvState && (srvState.onboarded || isTestEnv)) {
+        return srvState;
+      }
+    }
+    return null;
   },
 
   async reset() {
@@ -479,6 +666,13 @@ If mode is "bill":
   },
 
   async deletePurchase(id) {
+    const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
+    if (supabaseUrl && supabaseAnonKey) {
+      this._fetchTimeout(`${supabaseUrl}/rest/v1/purchases?id=eq.${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` }
+      }).catch(() => {});
+    }
     return await this.request('DELETE', `/api/purchases/${id}`);
   },
 
@@ -491,6 +685,13 @@ If mode is "bill":
   },
 
   async deleteBill(id) {
+    const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
+    if (supabaseUrl && supabaseAnonKey) {
+      this._fetchTimeout(`${supabaseUrl}/rest/v1/bills?id=eq.${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` }
+      }).catch(() => {});
+    }
     return await this.request('DELETE', `/api/bills/${id}`);
   },
 
@@ -503,10 +704,24 @@ If mode is "bill":
   },
 
   async deleteCartItem(id) {
+    const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
+    if (supabaseUrl && supabaseAnonKey) {
+      this._fetchTimeout(`${supabaseUrl}/rest/v1/cart?id=eq.${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` }
+      }).catch(() => {});
+    }
     return await this.request('DELETE', `/api/cart/${id}`);
   },
 
   async clearGotCart() {
+    const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
+    if (supabaseUrl && supabaseAnonKey) {
+      this._fetchTimeout(`${supabaseUrl}/rest/v1/cart?got=eq.true`, {
+        method: 'DELETE',
+        headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` }
+      }).catch(() => {});
+    }
     return await this.request('DELETE', '/api/cart/got');
   },
 
@@ -519,12 +734,17 @@ If mode is "bill":
   },
 
   async analyzeScan(payload) {
-    try {
-      return await this.request('POST', '/api/scan/analyze', payload, { skipQueue: true });
-    } catch {
-      const direct = await this.analyzeImageDirectAI(payload.mode, payload.image);
-      return direct ? { success: true, aiUsed: true, mode: payload.mode, extracted: direct } : null;
+    if (payload && payload.image) {
+      const directFirst = await this.analyzeImageDirectAI(payload.mode, payload.image);
+      if (directFirst) {
+        return { success: true, aiUsed: true, mode: payload.mode, extracted: directFirst };
+      }
     }
+    try {
+      const srv = await this.request('POST', '/api/scan/analyze', payload, { skipQueue: true });
+      if (srv && (srv.aiUsed || !payload.image)) return srv;
+    } catch {}
+    return null;
   },
 
   async scan(payload) {

@@ -1,11 +1,28 @@
-/* ───────── Desktop Preview Studio (outside the phone) ───────── */
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
+/* ───────── Native App Lock & Desktop Preview Studio ───────── */
+*{
+  box-sizing:border-box;margin:0;padding:0;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-touch-callout:none;
+}
+html,body{
+  height:100%;
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+  overscroll-behavior:none;
+  user-select:none;
+  -webkit-user-select:none;
+}
+input,textarea,select{
+  user-select:text;
+  -webkit-user-select:text;
+  font-size:16px !important; /* Strict iOS WebKit rule: >= 16px prevents Safari/WebView auto-zoom on focus! */
+}
 body{
   font-family:Inter,system-ui,sans-serif;color:#E6EAF2;overflow:hidden;position:relative;
   background:#070A10;
+  touch-action:manipulation;
 }
-button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;user-select:none;-webkit-user-select:none}
 
 /* Animated Aurora Studio Background */
 .studio-bg{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
@@ -162,14 +179,22 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
     border:0 !important;
     box-shadow:none !important;
   }
-  /* Hide simulated statusbar, island and home-indicator on real mobile */
   .statusbar,
   .island,
   .home-ind{
     display:none !important;
   }
   .appbar{
-    padding-top:max(12px, env(safe-area-inset-top)) !important;
+    padding-top:max(20px, calc(env(safe-area-inset-top, 16px) + 12px)) !important;
+  }
+  .onboarding{
+    padding-top:max(24px, calc(env(safe-area-inset-top, 20px) + 16px)) !important;
+  }
+  .notif{
+    top:max(18px, calc(env(safe-area-inset-top, 16px) + 10px)) !important;
+  }
+  .sc-top{
+    padding-top:max(20px, calc(env(safe-area-inset-top, 16px) + 12px)) !important;
   }
   .nav{
     height:calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)) !important;
@@ -223,7 +248,19 @@ body.native-app .home-ind{
 }
 body.is-mobile .appbar,
 body.native-app .appbar{
-  padding-top:max(14px, env(safe-area-inset-top)) !important;
+  padding-top:max(20px, calc(env(safe-area-inset-top, 16px) + 12px)) !important;
+}
+body.is-mobile .onboarding,
+body.native-app .onboarding{
+  padding-top:max(24px, calc(env(safe-area-inset-top, 20px) + 16px)) !important;
+}
+body.is-mobile .notif,
+body.native-app .notif{
+  top:max(18px, calc(env(safe-area-inset-top, 16px) + 10px)) !important;
+}
+body.is-mobile .sc-top,
+body.native-app .sc-top{
+  padding-top:max(20px, calc(env(safe-area-inset-top, 16px) + 12px)) !important;
 }
 body.is-mobile .nav,
 body.native-app .nav{

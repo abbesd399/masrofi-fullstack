@@ -133,15 +133,16 @@ M.ICONS = {
     <path class="duo" d="M3.5 12.2V5.5a2 2 0 0 1 2-2h6.7l8.3 8.3a2 2 0 0 1 0 2.8l-5.9 5.9a2 2 0 0 1-2.8 0l-8.3-8.3z"/>
     <path d="M3.5 12.2V5.5a2 2 0 0 1 2-2h6.7l8.3 8.3a2 2 0 0 1 0 2.8l-5.9 5.9a2 2 0 0 1-2.8 0l-8.3-8.3z"/>
     <circle cx="8.2" cy="8.2" r="1.4" fill="currentColor" stroke="none"/>`,
-  cog: `
-    <circle class="duo" cx="12" cy="12" r="3.2"/>
-    <circle cx="12" cy="12" r="3.2"/>
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>`,
+  share: `
+    <circle class="duo" cx="18" cy="5" r="3"/><circle class="duo" cx="6" cy="12" r="3"/><circle class="duo" cx="18" cy="19" r="3"/>
+    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+    <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>`,
+  flip: `
+    <path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/>`,
 };
 
 /* Bespoke Illustrated Character Portraits for Family Members (Apple Memoji / Notion Flat Vector Style) */
 M.CHARS = {
-  /* أبو خالد — Dad: warm smile, neat beard, glasses, collar shirt */
   abu: `<svg class="char-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
     <rect width="64" height="64" rx="32" fill="#0D9488"/>
     <circle cx="32" cy="22" r="24" fill="#14B8A6" opacity=".35"/>
@@ -161,7 +162,6 @@ M.CHARS = {
     <circle cx="37.5" cy="27.9" r="1.3" fill="#0F172A"/>
   </svg>`,
 
-  /* أم خالد — Mom: elegant hijab wrap, warm gentle smile, kind eyes */
   umm: `<svg class="char-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
     <rect width="64" height="64" rx="32" fill="#EC4899"/>
     <circle cx="32" cy="22" r="24" fill="#F472B6" opacity=".35"/>
@@ -178,7 +178,6 @@ M.CHARS = {
     <path d="M22 44.5c3 3 6.5 4.5 10 4.5s7-1.5 10-4.5" stroke="#F472B6" stroke-width="2" stroke-linecap="round" opacity=".5"/>
   </svg>`,
 
-  /* خالد — Khalid (Son, 17): cool teen hairstyle, hoodie, cheerful grin */
   khalid: `<svg class="char-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
     <rect width="64" height="64" rx="32" fill="#3B82F6"/>
     <circle cx="32" cy="22" r="24" fill="#60A5FA" opacity=".35"/>
@@ -195,7 +194,6 @@ M.CHARS = {
     <path d="M28.2 34.2c1.2 1.6 2.5 2.2 3.8 2.2s2.6-.6 3.8-2.2" stroke="#0F172A" stroke-width="1.8" stroke-linecap="round"/>
   </svg>`,
 
-  /* سارة — Sara (Daughter, 14): long flowing hair, cute hairclip, bright smile */
   sara: `<svg class="char-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
     <rect width="64" height="64" rx="32" fill="#F59E0B"/>
     <circle cx="32" cy="22" r="24" fill="#FBBF24" opacity=".35"/>
@@ -215,7 +213,11 @@ M.CHARS = {
   </svg>`
 };
 
-M.charSvg = id => M.CHARS[id] || M.CHARS.abu;
+M.charSvg = id => {
+  const m = M.s?.members?.find(x => x.id === id);
+  const avKey = m?.avatar || id;
+  return M.CHARS[avKey] || M.CHARS.abu;
+};
 
 M.ico = (name, size = 22, sw = 1.9) =>
   `<svg class="ic ic-${name}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${M.ICONS[name] || M.ICONS.spark}</svg>`;
@@ -226,6 +228,6 @@ M.tile = (cat, size = 42) => {
 };
 
 M.avatar = (id, cls = '', extra = '') => {
-  const m = M.member(id) || M.MEMBERS[0];
-  return `<span class="av has-char ${cls}" style="--avc:${m.c}" ${extra}>${M.charSvg(m.id)}</span>`;
+  const m = M.member(id);
+  return `<span class="av has-char ${cls}" style="--avc:${m.c || '#0D9488'}" ${extra}>${M.charSvg(m.id)}</span>`;
 };

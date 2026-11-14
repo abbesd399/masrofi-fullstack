@@ -1,4 +1,4 @@
-/* Masrofi — Algerian demo data (today = 10 Nov 2026, salary cycle 1–30 Nov) · amounts in DZD (د.ج) */
+/* Masrofi — Dynamic Family Data Model (Clean Real State by Default + Optional Demo Seed for Tests) */
 M.CATS = {
   groceries: { c: '#10B981', ico: 'cart',    n: { ar: 'مقاضي البيت', en: 'Groceries' } },
   car:       { c: '#3B82F6', ico: 'car',     n: { ar: 'السيارة والوقود', en: 'Car & Fuel' } },
@@ -9,17 +9,76 @@ M.CATS = {
   health:    { c: '#06B6D4', ico: 'pill',    n: { ar: 'صحة', en: 'Health' } },
   net:       { c: '#6366F1', ico: 'wifi',    n: { ar: 'إنترنت وهاتف', en: 'Internet & phone' } },
 };
-M.MEMBERS = [
-  { id: 'abu',    n: { ar: 'أبو خالد', en: 'Abu Khalid' }, i: { ar: 'أ', en: 'A' }, c: '#0D9488', role: { ar: 'الأب · صاحب الراتب', en: 'Dad · salary owner' } },
-  { id: 'umm',    n: { ar: 'أم خالد', en: 'Umm Khalid' }, i: { ar: 'م', en: 'U' }, c: '#EC4899', role: { ar: 'الأم', en: 'Mom' } },
-  { id: 'khalid', n: { ar: 'خالد', en: 'Khalid' },       i: { ar: 'خ', en: 'K' }, c: '#3B82F6', role: { ar: 'الابن · 17 سنة', en: 'Son · 17' } },
-  { id: 'sara',   n: { ar: 'سارة', en: 'Sara' },         i: { ar: 'س', en: 'S' }, c: '#F59E0B', role: { ar: 'الابنة · 14 سنة', en: 'Daughter · 14' } },
+
+M.AVATAR_COLORS = {
+  abu: '#0D9488',
+  umm: '#EC4899',
+  khalid: '#3B82F6',
+  sara: '#F59E0B'
+};
+
+M.DEFAULT_MEMBERS = [
+  { id: 'abu',    avatar: 'abu',    n: { ar: 'أبو خالد', en: 'Abu Khalid' }, i: { ar: 'أ', en: 'A' }, c: '#0D9488', role: { ar: 'الأب · صاحب الراتب', en: 'Dad · salary owner' } },
+  { id: 'umm',    avatar: 'umm',    n: { ar: 'أم خالد', en: 'Umm Khalid' }, i: { ar: 'م', en: 'U' }, c: '#EC4899', role: { ar: 'الأم', en: 'Mom' } },
+  { id: 'khalid', avatar: 'khalid', n: { ar: 'خالد', en: 'Khalid' },       i: { ar: 'خ', en: 'K' }, c: '#3B82F6', role: { ar: 'الابن · 17 سنة', en: 'Son · 17' } },
+  { id: 'sara',   avatar: 'sara',   n: { ar: 'سارة', en: 'Sara' },         i: { ar: 'س', en: 'S' }, c: '#F59E0B', role: { ar: 'الابنة · 14 سنة', en: 'Daughter · 14' } },
 ];
+
+Object.defineProperty(M, 'MEMBERS', {
+  get() {
+    if (M.s && Array.isArray(M.s.members) && M.s.members.length > 0) {
+      return M.s.members;
+    }
+    return M.DEFAULT_MEMBERS;
+  }
+});
+
+M.genFamilyCode = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = 'MSR-';
+  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+};
+
+/* Clean state for real users (starts with onboarding if not onboarded yet, zero fake demo items) */
+M.cleanState = () => {
+  const today = new Date().getDate() || 14;
+  return {
+    onboarded: false,
+    familyCode: '',
+    familyName: { ar: 'محفظة العائلة', en: 'Family Wallet' },
+    currentMemberId: 'abu',
+    members: [
+      { id: 'abu', avatar: 'abu', n: { ar: 'صاحب المحفظة', en: 'Wallet Owner' }, i: { ar: 'أ', en: 'A' }, c: '#0D9488', role: { ar: 'رب الأسرة · مدير المحفظة', en: 'Family Admin' } }
+    ],
+    salary: 0,
+    payday: 1,
+    day: today,
+    monthDays: 30,
+    purchases: [],
+    bills: [],
+    scheduled: [],
+    car: { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '00000 123 16', odo: 0, nextOil: 10000, kmDay: 40, fuelBudget: 5000, fuelUsed: 0 },
+    carItems: [],
+    hikes: [],
+    dups: [],
+    cart: [],
+    goal: { name: { ar: 'هدف التوفير العائلي', en: 'Family Savings Goal' }, target: 100000, saved: 0, monthly: 10000 },
+    famFilter: 'all', billFilter: 'all', scanCount: 0, bannerHidden: false, lastState: null,
+  };
+};
+
 const I = (ar, en, q, p) => ({ n: { ar, en }, q, p });
 const P = (id, member, mar, men, cat, amount, day, time, items, scanned = true) => ({ id, member, merchant: { ar: mar, en: men }, cat, amount, day, time, items: items || [], scanned });
 
-M.seed = () => ({
-  salary: 150000, day: 10, monthDays: 30,
+/* Demo seed kept for automated test suites and desktop studio simulator */
+M.demoSeed = () => ({
+  onboarded: true,
+  familyCode: 'MSR-2026',
+  familyName: { ar: 'عائلة أبو خالد', en: 'Abu Khalid Family' },
+  currentMemberId: 'abu',
+  members: JSON.parse(JSON.stringify(M.DEFAULT_MEMBERS)),
+  salary: 150000, payday: 1, day: 10, monthDays: 30,
   purchases: [
     P(1, 'umm', 'أونو هايبر', 'Uno Hypermarket', 'groceries', 4910, 10, '6:40 PM', [I('حليب 1 لتر', 'Milk 1L', 4, 90), I('سميد 10 كغ', 'Semolina 10kg', 1, 1400), I('دجاج', 'Chicken', 2, 480), I('خضر وفواكه', 'Fruit & veg', 1, 650), I('منظفات', 'Detergents', 2, 320), I('تمر دقلة نور', 'Deglet Nour dates', 1, 900)]),
     P(2, 'khalid', 'نفطال', 'Naftal', 'car', 1500, 10, '2:15 PM', [I('بنزين', 'Petrol', 1, 1500)]),
@@ -33,7 +92,6 @@ M.seed = () => ({
     P(10, 'sara', 'مركز باب الزوار', 'Bab Ezzouar Mall', 'family', 3600, 2, '4:30 PM', [I('ملابس', 'Clothes', 3, 1200)]),
     P(11, 'abu', 'إيريس', 'IRIS Store', 'home', 4200, 1, '9:00 PM', [I('آلة قهوة', 'Coffee maker', 1, 4200)]),
   ],
-  /* Bills now distinguish Fixed (ثابتة) vs Variable (متغيرة) */
   bills: [
     { id: 'ins',   n: { ar: 'تأمين السيارة · SAA', en: 'Car insurance · SAA' }, cat: 'car', amount: 18500, due: 15, paid: false, kind: 'fixed' },
     { id: 'elec',  n: { ar: 'الكهرباء والغاز · سونلغاز', en: 'Power & gas · Sonelgaz' }, cat: 'utilities', amount: 6500, prevAmount: 5900, due: 18, paid: false, kind: 'var' },
@@ -64,9 +122,17 @@ M.seed = () => ({
     { id: 5, ...I('خبز (باقيت)', 'Baguette', 6, 15), got: false },
     { id: 6, ...I('منظف غسيل', 'Laundry detergent', 1, 450), got: false },
   ],
-  goal: { target: 300000, saved: 180000, monthly: 20000 },
+  goal: { name: { ar: 'رحلة الصيف للعائلة', en: 'Family summer trip' }, target: 300000, saved: 180000, monthly: 20000 },
   famFilter: 'all', billFilter: 'all', scanCount: 0, bannerHidden: false, lastState: null,
 });
+
+/* M.seed() returns cleanState for real mobile/standalone app users, or demoSeed when in Automated Test mode */
+M.seed = () => {
+  if (typeof window !== 'undefined' && (window.__MASROFI_TEST_MODE__ || window.location.port === '3088' || window.location.port === '3099')) {
+    return M.demoSeed();
+  }
+  return M.cleanState();
+};
 
 M.SIM_PURCHASES = [
   ['umm', 'كارفور', 'Carrefour', 'groceries', [6000, 11000]],
@@ -77,17 +143,20 @@ M.SIM_PURCHASES = [
   ['khalid', 'مطعم الكرم', 'El Karam Restaurant', 'dining', [1200, 2400]],
 ];
 
-/* derived numbers */
+/* derived numbers — safe against salary = 0 or daysLeft = 0 */
 M.calc = () => {
   const s = M.s;
-  const spentPurch = s.purchases.reduce((a, p) => a + p.amount, 0);
-  const paidBills = s.bills.filter(b => b.paid).reduce((a, b) => a + b.amount, 0);
-  const reserved = s.bills.filter(b => !b.paid).reduce((a, b) => a + b.amount, 0);
+  const sal = Math.max(0, Number(s.salary) || 0);
+  const spentPurch = (s.purchases || []).reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  const paidBills = (s.bills || []).filter(b => b.paid).reduce((a, b) => a + (Number(b.amount) || 0), 0);
+  const reserved = (s.bills || []).filter(b => !b.paid).reduce((a, b) => a + (Number(b.amount) || 0), 0);
   const spent = spentPurch + paidBills;
-  const spendable = Math.max(0, s.salary - spent - reserved);
-  const daysLeft = s.monthDays - s.day;
-  const pct = Math.round((spendable / s.salary) * 100);
-  const state = pct > 40 ? 'safe' : pct >= 15 ? 'warn' : 'crit';
+  const spendable = Math.max(0, sal - spent - reserved);
+  const daysLeft = Math.max(1, (s.monthDays || 30) - (s.day || 1));
+  const pct = sal > 0 ? Math.round((spendable / sal) * 100) : 100;
+  const state = sal === 0 ? 'safe' : (pct > 40 ? 'safe' : pct >= 15 ? 'warn' : 'crit');
   return { spentPurch, paidBills, reserved, spent, spendable, daysLeft, daily: spendable / daysLeft, pct, state };
 };
-M.member = id => M.MEMBERS.find(m => m.id === id);
+
+M.member = id => M.MEMBERS.find(m => m.id === id) || M.MEMBERS[0] || M.DEFAULT_MEMBERS[0];
+M.currentUser = () => M.member(M.s?.currentMemberId || M.MEMBERS[0]?.id);

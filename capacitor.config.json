@@ -1,9 +1,20 @@
 {
   "appId": "com.masrofi.app",
-  "appName": "Masrofi · مصروفي",
+  "appName": "مصروفي · Masrofi",
   "webDir": "www",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "iosScheme": "capacitor"
+  },
+  "ios": {
+    "contentInset": "never",
+    "allowsLinkPreview": false,
+    "scrollEnabled": false,
+    "backgroundColor": "#070D19"
+  },
+  "android": {
+    "backgroundColor": "#070D19",
+    "allowMixedContent": true
   },
   "plugins": {
     "Camera": {

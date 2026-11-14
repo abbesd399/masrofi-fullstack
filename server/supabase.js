@@ -25,6 +25,15 @@ function loadDotEnv() {
 }
 loadDotEnv();
 
+function decodeKey(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('b64:')) {
+    try { return Buffer.from(trimmed.slice(4), 'base64').toString('utf8').trim(); } catch { return ''; }
+  }
+  return trimmed;
+}
+
 function jsonRequest(urlStr, { method = 'GET', headers = {}, body = null, timeout = 25000 } = {}) {
   return new Promise((resolve, reject) => {
     let parsed;
@@ -78,7 +87,8 @@ function getIntegrations(db) {
   const supabaseUrl = (stored.supabaseUrl || process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
   const supabaseAnonKey = (stored.supabaseAnonKey || process.env.SUPABASE_ANON_KEY || '').trim();
   const aiProvider = (stored.aiProvider || process.env.AI_PROVIDER || 'gemini').trim().toLowerCase();
-  const aiApiKey = (stored.aiApiKey || process.env.AI_API_KEY || process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || '').trim();
+  const rawAiKey = (stored.aiApiKey || process.env.AI_API_KEY || process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || '').trim();
+  const aiApiKey = decodeKey(rawAiKey);
   const aiModel = (stored.aiModel || process.env.AI_MODEL || '').trim();
 
   return {
@@ -123,6 +133,11 @@ async function syncStateToSupabase(db) {
 
     // 1. Upsert config keys
     const configRows = [
+      { key: 'onboarded', val: Boolean(st.onboarded) },
+      { key: 'familyCode', val: st.familyCode || 'MSR-2026' },
+      { key: 'familyName', val: st.familyName || { ar: 'محفظة العائلة', en: 'Family Wallet' } },
+      { key: 'members', val: st.members || [] },
+      { key: 'payday', val: Number(st.payday || 1) },
       { key: 'salary', val: st.salary },
       { key: 'day', val: st.day },
       { key: 'monthDays', val: st.monthDays },
@@ -133,6 +148,9 @@ async function syncStateToSupabase(db) {
       { key: 'hikes', val: st.hikes },
       { key: 'dups', val: st.dups }
     ];
+    if (cfg.aiApiKey) {
+      configRows.push({ key: 'ai_config', val: { aiApiKey: cfg.aiApiKey, aiProvider: cfg.aiProvider || 'gemini' } });
+    }
     await jsonRequest(`${cfg.supabaseUrl}/rest/v1/config?on_conflict=key`, {
       method: 'POST',
       headers,

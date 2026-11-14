@@ -1,4 +1,4 @@
-/* Tab 2 — Bills & Car Hub (Fixed vs Variable Bills + Smart Car Tracker) */
+/* Tab 2 — Bills & Car Hub (Fixed vs Variable Bills + Smart Customizable Car Tracker) */
 M.carSvg = () => `<svg class="car-svg" viewBox="0 0 250 105">
   <defs>
     <linearGradient id="cb" x1="0" y1="0" x2="1" y2="1">
@@ -54,21 +54,21 @@ M.billRow = b => {
 
 M.billsListCardHtml = () => {
   const s = M.s, flt = s.billFilter || 'all';
-  const filtered = s.bills.filter(b => flt === 'all' || (b.kind || 'fixed') === flt);
+  const filtered = (s.bills || []).filter(b => flt === 'all' || (b.kind || 'fixed') === flt);
   const unpaid = filtered.filter(b => !b.paid).sort((a, b) => a.due - b.due);
   const paid = filtered.filter(b => b.paid);
   return `
     <div class="sec-h" style="margin-bottom:6px"><h3>${M.t('segBills')}</h3><button type="button" class="btn sm tonal" data-act="scan-manual">${M.ico('plus', 14, 2.5)} <span>${M.t('addBillBtn')}</span></button></div>
-    ${unpaid.length ? `<div class="list">${unpaid.map(M.billRow).join('')}</div>` : `<div class="empty">${M.illu('done')}<h4>${M.t('allPaid')}</h4><p>${M.t('allPaidSub')}</p></div>`}
-    ${s.scheduled.length && (flt === 'all' || s.scheduled.some(b => (b.kind || 'fixed') === flt)) ? `<div class="feed-day" style="margin-top:12px">${s.lang === 'ar' ? 'مجدولة للأشهر القادمة' : 'Scheduled ahead'}</div>
+    ${unpaid.length ? `<div class="list">${unpaid.map(M.billRow).join('')}</div>` : `<div class="empty">${M.illu('done')}<h4>${(s.bills || []).length ? M.t('allPaid') : (s.lang === 'ar' ? 'لا توجد فواتير مضافة بعد' : 'No bills added yet')}</h4><p>${(s.bills || []).length ? M.t('allPaidSub') : (s.lang === 'ar' ? 'أضف فواتيرك الشهرية الثابتة أو المتغيرة أو صوّرها بالكاميرا ليتم حجزها تلقائياً.' : 'Add your monthly fixed or variable bills or scan them with the camera.')}</p></div>`}
+    ${(s.scheduled || []).length && (flt === 'all' || s.scheduled.some(b => (b.kind || 'fixed') === flt)) ? `<div class="feed-day" style="margin-top:12px">${s.lang === 'ar' ? 'مجدولة للأشهر القادمة' : 'Scheduled ahead'}</div>
       <div class="list">${s.scheduled.filter(b => flt === 'all' || (b.kind || 'fixed') === flt).map(b => `<div class="row ${b.id === M.freshBillId ? 'fresh' : ''}" data-act="bill" data-id="${b.id}"><span class="tile" style="--c:${M.CATS[b.cat]?.c || '#3B82F6'}">${M.ico(M.CATS[b.cat]?.ico || 'receipt', 20)}</span><div class="r-main"><div class="r-t">${M.L(b.n)}</div><div class="r-s"><span class="b-kind ${b.kind === 'var' ? 'var' : 'fixed'}">${M.t(b.kind === 'var' ? 'billVar' : 'billFixed')}</span> <span>${M.L(b.dueStr)} · ${M.ico('bell', 11)} ${M.L(b.remStr)}</span> <span class="scan-tag">${M.ico('scan', 11, 2)}</span></div></div><div class="r-amt priv">${M.money(b.amount)}</div></div>`).join('')}</div>` : ''}
     ${paid.length ? `<div class="feed-day" style="margin-top:12px">${M.t('paidL')}</div><div class="list">${paid.map(M.billRow).join('')}</div>` : ''}`;
 };
 
 M.billsBodyHtml = () => {
-  const s = M.s, seg = s.billSeg || 'bills';
+  const s = M.s, seg = s.billSeg || 'bills', ar = s.lang === 'ar';
   if (seg === 'bills') {
-    const unpaidAll = s.bills.filter(b => !b.paid), paidAll = s.bills.filter(b => b.paid);
+    const unpaidAll = (s.bills || []).filter(b => !b.paid), paidAll = (s.bills || []).filter(b => b.paid);
     const sum = a => a.reduce((x, b) => x + b.amount, 0);
     const flt = s.billFilter || 'all';
     return `
@@ -83,32 +83,44 @@ M.billsBodyHtml = () => {
       </div>
     </div>
     <div class="chips bill-chips" id="billChips">
-      <button type="button" class="chip ${flt === 'all' ? 'on' : ''}" data-act="bill-filter" data-id="all">${M.t('all')} (${s.bills.length})</button>
+      <button type="button" class="chip ${flt === 'all' ? 'on' : ''}" data-act="bill-filter" data-id="all">${M.t('all')} (${(s.bills || []).length})</button>
       <button type="button" class="chip ${flt === 'fixed' ? 'on' : ''}" style="--chip-c:#0D9488" data-act="bill-filter" data-id="fixed">${M.ico('shield', 13, 2)} <span>${M.t('billFixed')}</span></button>
       <button type="button" class="chip ${flt === 'var' ? 'on' : ''}" style="--chip-c:#D97706" data-act="bill-filter" data-id="var">${M.ico('bolt', 13, 2)} <span>${M.t('billVar')}</span></button>
     </div>
     <div class="card" id="billsCard">${M.billsListCardHtml()}</div>`;
   }
-  const car = s.car, toOil = car.nextOil - car.odo;
+  const car = s.car || { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '00000 123 16', odo: 0, nextOil: 10000, kmDay: 40, fuelBudget: 5000, fuelUsed: 0 };
+  const toOil = Math.max(0, (car.nextOil || 10000) - (car.odo || 0));
+  const kmDay = Math.max(1, car.kmDay || 40);
+  const fuelPct = car.fuelBudget > 0 ? Math.min(100, (car.fuelUsed / car.fuelBudget) * 100) : 0;
   return `
   <div class="car3d">
     <div class="car-card" data-act="car-timeline" data-tilt3d>
       <div class="car-card-bg" aria-hidden="true"></div>
-      <div class="cc-top"><div><div class="cc-name">${M.L(car.n)}</div><div class="cc-sub">${M.t('reminderOn')}</div></div><span class="plate">DZ · ${car.plate}</span></div>
+      <div class="cc-top">
+        <div>
+          <div class="cc-name">${M.L(car.n)} <span style="opacity:.75;display:inline-flex;vertical-align:middle">${M.ico('pen', 13, 2)}</span></div>
+          <div class="cc-sub">${M.t('reminderOn')}</div>
+        </div>
+        <span class="plate">DZ · ${car.plate || '—'}</span>
+      </div>
       ${M.carSvg()}
-      <div class="cc-odo"><b class="num">${M.fmt(car.odo)}</b><span>${M.t('odo')} · ${M.t('km')}</span></div>
+      <div class="cc-odo"><b class="num">${M.fmt(car.odo || 0)}</b><span>${M.t('odo')} · ${M.t('km')}</span></div>
     </div>
   </div>
-  <div class="ai-pill"><span class="spark">${M.ico('spark', 16, 2)}</span><span>${M.t('aiOdo')(M.fmt(toOil), Math.round(toOil / car.kmDay))}</span></div>
+  <div class="ai-pill"><span class="spark">${M.ico('spark', 16, 2)}</span><span>${M.t('aiOdo')(M.fmt(toOil), Math.round(toOil / kmDay))}</span></div>
   <div class="card">
-    <div class="sec-h"><h3>${M.t('carObl')}</h3></div>
-    <div class="list">${s.carItems.map(it => `<div class="row" data-act="car-item" data-id="${it.id}">
+    <div class="sec-h">
+      <h3>${M.t('carObl')}</h3>
+      <button type="button" class="btn sm tonal" data-act="car-edit">${M.ico('pen', 13, 2)} <span>${ar ? 'تعديل السيارة' : 'Edit Car'}</span></button>
+    </div>
+    <div class="list">${(s.carItems || []).map(it => `<div class="row" data-act="car-item" data-id="${it.id}">
       <span class="tile" style="--c:${it.c}">${M.ico(it.ico, 20)}</span>
       <div class="r-main"><div class="r-t">${M.L(it.n)} ${it.ai ? `<span class="badge info">AI</span>` : ''}</div><div class="r-s">${M.L(it.s)}</div></div>
       <div class="count ${it.days <= 7 ? 'crit' : it.days <= 30 ? 'warn' : ''}"><b class="num">${it.days}</b><span>${M.t('days')}</span></div></div>`).join('')}
       <div class="row" data-act="car-item" data-id="fuel"><span class="tile" style="--c:#06B6D4">${M.ico('fuel', 20)}</span>
-        <div class="r-main"><div class="r-t">${M.t('fuelBudget')}</div><div class="bar" style="margin-top:8px;--bc:#06B6D4"><i style="width:${car.fuelUsed / car.fuelBudget * 100}%"></i></div></div>
-        <div class="r-end small priv"><b class="num">${M.fmt(car.fuelUsed)}</b>/<span class="num">${M.fmt(car.fuelBudget)}</span></div></div>
+        <div class="r-main"><div class="r-t">${M.t('fuelBudget')}</div><div class="bar" style="margin-top:8px;--bc:#06B6D4"><i style="width:${fuelPct}%"></i></div></div>
+        <div class="r-end small priv"><b class="num">${M.fmt(car.fuelUsed || 0)}</b>/<span class="num">${M.fmt(car.fuelBudget || 0)}</span></div></div>
     </div>
   </div>`;
 };
@@ -137,7 +149,8 @@ M.acts['bill-filter'] = el => {
 
 M.acts.pay = (el, ev) => {
   ev.stopPropagation();
-  const b = M.s.bills.find(x => x.id === el.dataset.id);
+  const b = (M.s.bills || []).find(x => x.id === el.dataset.id);
+  if (!b) return;
   el.outerHTML = `<span class="mini-check">${M.ico('check', 16, 3)}</span>`;
   M.toast(`${M.ico('checkc', 16)} ${M.t('billPaid')} · ${M.L(b.n)}`);
   setTimeout(() => {
@@ -153,7 +166,7 @@ M.acts.pay = (el, ev) => {
 };
 
 M.acts.bill = el => {
-  const b = M.s.bills.find(x => x.id === el.dataset.id) || M.s.scheduled.find(x => x.id === el.dataset.id);
+  const b = (M.s.bills || []).find(x => x.id === el.dataset.id) || (M.s.scheduled || []).find(x => x.id === el.dataset.id);
   if (!b) return;
   const isVar = b.kind === 'var';
   const dueInfo = b.dueStr ? M.L(b.dueStr) : (b.paid ? M.t('paidOn')(M.dateStr(b.paidDay)) : M.t('dueOn')(M.dateStr(b.due)));
@@ -179,7 +192,7 @@ M.acts.bill = el => {
         <label>${M.t('editBillAmt')} (${M.t('cur')})
           <div style="display:flex;gap:8px">
             <input name="amt" type="text" inputmode="decimal" required value="${b.amount}" style="flex:1">
-            <button class="btn sm tonal" type="submit" style="height:42px;border-radius:11px;padding:0 16px">${M.t('save')}</button>
+            <button class="btn sm tonal" type="submit" style="height:44px;border-radius:11px;padding:0 16px">${M.t('save')}</button>
           </div>
         </label>
         <div class="muted small" style="margin-top:6px">${isVar ? M.t('varDesc') : M.t('fixedDesc')}</div>
@@ -201,9 +214,9 @@ M.acts.bill = el => {
 
 M.acts['bill-del'] = el => {
   const id = el.dataset.id;
-  M.s.bills = M.s.bills.filter(b => b.id != id);
-  M.s.scheduled = M.s.scheduled.filter(b => b.id != id);
-  M.s.carItems = M.s.carItems.filter(ci => ci.id != id);
+  M.s.bills = (M.s.bills || []).filter(b => b.id != id);
+  M.s.scheduled = (M.s.scheduled || []).filter(b => b.id != id);
+  M.s.carItems = (M.s.carItems || []).filter(ci => ci.id != id);
   if (M.api) {
     M.api.saveLocal(M.s);
     M.api.deleteBill(id).catch(() => {});
@@ -222,7 +235,7 @@ M.acts['pick-kind'] = el => {
 };
 
 M.saveBillEdit = f => {
-  const b = M.s.bills.find(x => x.id === f.dataset.id) || M.s.scheduled.find(x => x.id === f.dataset.id);
+  const b = (M.s.bills || []).find(x => x.id === f.dataset.id) || (M.s.scheduled || []).find(x => x.id === f.dataset.id);
   if (!b) return;
   const raw = typeof f.amt.value === 'string' ? M.toWesternDigits(f.amt.value) : f.amt.value;
   const amt = parseFloat(raw);
@@ -240,7 +253,7 @@ M.saveBillEdit = f => {
 };
 
 M.acts['pay-sheet'] = el => {
-  const b = M.s.bills.find(x => x.id === el.dataset.id) || M.s.scheduled.find(x => x.id === el.dataset.id);
+  const b = (M.s.bills || []).find(x => x.id === el.dataset.id) || (M.s.scheduled || []).find(x => x.id === el.dataset.id);
   if (!b) return;
   const amtIn = el.closest('.sh-body')?.querySelector('input[name="amt"]');
   const rawA = amtIn && typeof amtIn.value === 'string' ? M.toWesternDigits(amtIn.value) : amtIn?.value;
@@ -253,33 +266,93 @@ M.acts['pay-sheet'] = el => {
   }
   setTimeout(() => { M.sheet.close(); M.render(); M.checkThreshold(); }, 1300);
 };
+
+/* Editable Car Profile Modal */
+M.acts['car-edit'] = () => {
+  const ar = M.s.lang === 'ar';
+  const car = M.s.car || { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '', odo: 0, nextOil: 10000, kmDay: 40, fuelBudget: 5000, fuelUsed: 0 };
+  M.sheet.open(ar ? 'بيانات السيارة والصيانة' : 'Car Details & Maintenance', `
+    <form class="manual-form" data-form="car-edit">
+      <label>${ar ? 'نوع واسم السيارة' : 'Car Make & Model'}
+        <input name="cn" required value="${M.L(car.n)}" autocomplete="off">
+      </label>
+      <label>${ar ? 'رقم اللوحة' : 'License Plate'}
+        <input name="plate" dir="ltr" value="${car.plate || ''}" autocomplete="off">
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <label>${ar ? 'العداد الحالي (كم)' : 'Current Odometer (km)'}
+          <input name="odo" type="text" inputmode="numeric" value="${car.odo || 0}">
+        </label>
+        <label>${ar ? 'تغيير الزيت القادم (كم)' : 'Next Oil Change (km)'}
+          <input name="nextOil" type="text" inputmode="numeric" value="${car.nextOil || 10000}">
+        </label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <label>${ar ? 'ميزانية الوقود الشهرية' : 'Monthly Fuel Budget'}
+          <input name="fuelBudget" type="text" inputmode="numeric" value="${car.fuelBudget || 5000}">
+        </label>
+        <label>${ar ? 'المصروف من الوقود' : 'Fuel Used'}
+          <input name="fuelUsed" type="text" inputmode="numeric" value="${car.fuelUsed || 0}">
+        </label>
+      </div>
+      <button class="btn" type="submit">${M.ico('check', 18, 2.5)} ${M.t('save')}</button>
+    </form>
+    <button type="button" class="btn tonal" data-act="car-timeline" style="margin-top:4px">${M.t('timeline')}</button>
+  `);
+};
+
+M.saveCarEdit = f => {
+  const ar = M.s.lang === 'ar';
+  const name = (f.cn.value || '').trim() || (ar ? 'سيارة العائلة' : 'Family Car');
+  const plate = (f.plate.value || '').trim();
+  const odo = parseInt(M.toWesternDigits(String(f.odo.value || '0')), 10) || 0;
+  const nextOil = parseInt(M.toWesternDigits(String(f.nextOil.value || '10000')), 10) || (odo + 5000);
+  const fuelBudget = parseFloat(M.toWesternDigits(String(f.fuelBudget.value || '5000'))) || 5000;
+  const fuelUsed = parseFloat(M.toWesternDigits(String(f.fuelUsed.value || '0'))) || 0;
+  M.s.car = Object.assign({}, M.s.car, {
+    n: { ar: name, en: name },
+    plate,
+    odo,
+    nextOil,
+    fuelBudget,
+    fuelUsed
+  });
+  if (M.api) {
+    M.api.saveLocal(M.s);
+    M.api.updateCar({ car: M.s.car }).catch(() => {});
+  }
+  M.sheet.close();
+  M.render();
+  M.toast(`${M.ico('checkc', 16)} ${ar ? 'تم تحديث بيانات السيارة' : 'Car details updated'}`);
+};
+
 M.acts['car-timeline'] = () => {
   const ar = M.s.lang === 'ar', kmU = M.t('km'), curU = M.t('cur');
+  const car = M.s.car || { odo: 0, nextOil: 10000 };
   const tl = [
-    [ar ? 'يناير' : 'Jan', ar ? 'تغيير زيت' : 'Oil change', `82,100 ${kmU}`, true, '#F59E0B'],
-    [ar ? 'مارس' : 'Mar', ar ? 'تدوير الإطارات' : 'Tyre rotation', `84,900 ${kmU}`, true, '#64748B'],
-    [ar ? 'مايو' : 'May', ar ? 'تغيير زيت + فلتر' : 'Oil + filter', `87,300 ${kmU}`, true, '#F59E0B'],
-    [ar ? 'أغسطس' : 'Aug', ar ? 'صيانة المكيف' : 'A/C service', `90,200 ${kmU}`, true, '#06B6D4'],
-    [ar ? '15 نوفمبر' : 'Nov 15', ar ? 'تجديد التأمين' : 'Insurance renewal', `18,500 ${curU}`, false, '#3B82F6'],
-    [ar ? '~4 ديسمبر' : '~Dec 4', ar ? 'تغيير زيت (توقع AI)' : 'Oil change (AI forecast)', `95,000 ${kmU}`, false, '#F59E0B'],
-    [ar ? '3 فبراير' : 'Feb 3', ar ? 'الفحص الدوري' : 'Periodic inspection', `2,500 ${curU}`, false, '#10B981'],
+    [ar ? 'العداد الحالي' : 'Current Odometer', M.L(car.n), `${M.fmt(car.odo || 0)} ${kmU}`, true, '#0D9488'],
+    [ar ? 'الصيانة القادمة' : 'Next Oil Service', ar ? 'تغيير زيت + فلتر' : 'Oil + filter', `${M.fmt(car.nextOil || 10000)} ${kmU}`, false, '#F59E0B'],
+    ...(M.s.carItems || []).map(it => [ `${it.days} ${M.t('days')}`, M.L(it.n), M.L(it.s), false, it.c || '#3B82F6' ])
   ];
   M.sheet.open(M.t('timeline'), `<div class="tl">${tl.map(([d, n, m, done, c]) => `<div class="tl-i ${done ? 'done' : ''}" style="--tc:${c}"><b>${n}</b><p>${d} · ${m}</p></div>`).join('')}</div>`);
 };
+
 M.acts['car-item'] = el => {
-  const id = el.dataset.id, car = M.s.car;
+  const id = el.dataset.id, car = M.s.car || { fuelBudget: 5000, fuelUsed: 0, nextOil: 10000, odo: 0, kmDay: 40 };
   if (id === 'fuel') {
+    const pct = car.fuelBudget > 0 ? Math.min(100, (car.fuelUsed / car.fuelBudget) * 100) : 0;
     return M.sheet.open(M.t('fuelBudget'), `<div class="group"><div class="kv"><span>${M.t('fuelBudget')}</span><b>${M.money(car.fuelBudget)}</b></div>
       <div class="kv"><span>${M.t('spent')}</span><b>${M.moneyNeg(car.fuelUsed)}</b></div></div>
-      <div class="bar" style="--bc:#06B6D4;height:12px;border-radius:6px"><i style="width:${car.fuelUsed / car.fuelBudget * 100}%"></i></div>
-      <p class="muted small">${M.s.lang === 'ar' ? 'معدل الاستهلاك أقل من المتوقع بـ 8% هذا الشهر.' : 'Fuel use is 8% below forecast this month.'}</p>`);
+      <div class="bar" style="--bc:#06B6D4;height:12px;border-radius:6px"><i style="width:${pct}%"></i></div>
+      <button type="button" class="btn tonal" data-act="car-edit" style="margin-top:8px">${M.ico('pen', 15, 2)} <span>${M.s.lang === 'ar' ? 'تعديل ميزانية الوقود' : 'Edit Fuel Budget'}</span></button>`);
   }
-  const it = M.s.carItems.find(x => x.id === id);
+  const it = (M.s.carItems || []).find(x => x.id === id);
+  if (!it) return;
   M.sheet.open(M.L(it.n), `
     <div style="text-align:center"><span class="tile" style="--c:${it.c};width:64px;height:64px;margin:auto">${M.ico(it.ico, 32)}</span>
       <div style="font-size:40px;font-weight:700;margin-top:8px" class="num">${it.days}</div><div class="muted">${M.t('days')}</div></div>
     <div class="group"><div class="kv"><span>${M.L(it.n)}</span><b>${M.L(it.s)}</b></div>
       <div class="kv"><span>${M.t('reminder')}</span><b>${M.t('reminderOn')}</b></div></div>
-    ${it.ai ? `<div class="ai-pill"><span class="spark">${M.ico('spark', 16, 2)}</span><span>${M.t('aiOdo')(M.fmt(car.nextOil - car.odo), Math.round((car.nextOil - car.odo) / car.kmDay))}</span></div>` : ''}
+    ${it.ai ? `<div class="ai-pill"><span class="spark">${M.ico('spark', 16, 2)}</span><span>${M.t('aiOdo')(M.fmt(Math.max(0, car.nextOil - car.odo)), Math.round(Math.max(0, car.nextOil - car.odo) / Math.max(1, car.kmDay || 40)))}</span></div>` : ''}
     <button type="button" class="btn tonal" data-act="car-timeline">${M.t('timeline')}</button>`);
 };

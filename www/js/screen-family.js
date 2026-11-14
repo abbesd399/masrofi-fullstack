@@ -1,12 +1,12 @@
-/* Tab 3 — Family Shared Wallet: members · purchases feed | smart grocery cart (manual user name & price) */
+/* Tab 3 — Family Shared Wallet: dynamic members + invite code · purchases feed | smart grocery cart */
 
 M.feedListHtml = () => {
-  const s = M.s;
-  const list = s.purchases.filter(p => s.famFilter === 'all' || p.member === s.famFilter);
+  const s = M.s, ar = s.lang === 'ar';
+  const list = (s.purchases || []).filter(p => s.famFilter === 'all' || p.member === s.famFilter);
   const days = [...new Set(list.map(p => p.day))];
   const head = `<div class="sec-h" style="margin-bottom:4px"><h3>${M.t('segFeed')}</h3><button type="button" class="btn sm tonal" data-act="add-purch-open">${M.ico('plus', 14, 2.5)} <span>${M.t('addPurchBtn')}</span></button></div>`;
   if (!days.length) {
-    return `${head}<div class="empty">${M.illu('cart')}<p>—</p></div>`;
+    return `${head}<div class="empty">${M.illu('cart')}<h4>${ar ? 'لا توجد مشتريات مسجلة بعد' : 'No purchases yet'}</h4><p>${ar ? 'سجّل مشترياتك يدوياً أو صوّر أي إيصال بالكاميرا الذكية.' : 'Record purchases manually or scan any receipt with the camera.'}</p></div>`;
   }
   return head + days.map(d => `<div class="feed-day">${M.dayLabel(d)}</div>
     <div class="list">${list.filter(p => p.day === d).map(p => M.purchaseRow(p).replace('class="row"', `class="row${p.id === M.freshId ? ' fresh' : ''}"`)).join('')}</div>`).join('');
@@ -18,7 +18,7 @@ M.familyBodyHtml = () => {
     return `
     <div style="display:flex;flex-direction:column;gap:14px">
       <div class="chips" id="famChips">
-        ${[['all', M.t('all'), 'var(--primary)'], ...M.MEMBERS.map(m => [m.id, M.L(m.n), m.c])].map(([v, l, col]) =>
+        ${[['all', M.t('all'), 'var(--primary)'], ...M.MEMBERS.map(m => [m.id, M.L(m.n), m.c || '#0D9488'])].map(([v, l, col]) =>
           `<button type="button" class="chip ${s.famFilter === v ? 'on' : ''}" style="--chip-c:${col}" data-act="fam-filter" data-id="${v}">
             ${v !== 'all' ? M.avatar(v, 'xs') : `<span class="chip-all-ic">${M.ico('users', 15, 2)}</span>`}
             <span>${l}</span>
@@ -29,10 +29,11 @@ M.familyBodyHtml = () => {
   }
 
   const c = M.calc();
-  const est = s.cart.reduce((a, i) => a + i.p * i.q, 0);
-  const left = s.cart.filter(i => !i.got).reduce((a, i) => a + i.p * i.q, 0);
-  const gotCount = s.cart.filter(i => i.got).length;
-  const remCount = s.cart.length - gotCount;
+  const cartList = s.cart || [];
+  const est = cartList.reduce((a, i) => a + i.p * i.q, 0);
+  const left = cartList.filter(i => !i.got).reduce((a, i) => a + i.p * i.q, 0);
+  const gotCount = cartList.filter(i => i.got).length;
+  const remCount = cartList.length - gotCount;
   const pct = c.spendable ? Math.min(100, Math.round((left / c.spendable) * 100)) : (left ? 100 : 0);
   const donePct = est ? Math.round(((est - left) / est) * 100) : 0;
 
@@ -40,7 +41,7 @@ M.familyBodyHtml = () => {
   <div class="cart-est">
     <div class="ce-top">
       <div class="small" style="opacity:.92;display:flex;gap:6px;align-items:center;font-weight:600">${M.ico('cart', 16, 2)} ${M.t('remBasket')}</div>
-      ${gotCount ? `<button type="button" class="ce-clear" data-act="cart-clear-got">${M.ico('trash', 13, 2)} ${M.t('clearGot')} (${gotCount})</button>` : `<span class="ce-pill">${remCount}/${s.cart.length} ${M.t('items')}</span>`}
+      ${gotCount ? `<button type="button" class="ce-clear" data-act="cart-clear-got">${M.ico('trash', 13, 2)} ${M.t('clearGot')} (${gotCount})</button>` : `<span class="ce-pill">${remCount}/${cartList.length} ${M.t('items')}</span>`}
     </div>
     <div class="ce-big priv" id="cartLeftBal">${M.money(left)}</div>
     <div class="ce-meta">
@@ -64,7 +65,7 @@ M.familyBodyHtml = () => {
       </div>
     </form>
 
-    ${s.cart.length ? `<div class="list cart-list" style="margin-top:8px">${s.cart.map(i => `<div class="row ${i.got ? 'got' : ''} ${i.id === M.freshId ? 'fresh' : ''}">
+    ${cartList.length ? `<div class="list cart-list" style="margin-top:8px">${cartList.map(i => `<div class="row ${i.got ? 'got' : ''} ${i.id === M.freshId ? 'fresh' : ''}">
       <button type="button" class="cart-check ${i.got ? 'on' : ''}" data-act="cart-got" data-id="${i.id}" aria-label="check">${i.got ? M.ico('check', 14, 3) : ''}</button>
       <div class="r-main" data-act="cart-edit" data-id="${i.id}">
         <div class="r-t">${M.L(i.n)}</div>
@@ -81,15 +82,22 @@ M.familyBodyHtml = () => {
 };
 
 M.screens.family = () => {
-  const s = M.s, seg = s.famSeg || 'feed';
-  const members = `<div class="members anim">${M.MEMBERS.map(m => {
-    const tot = s.purchases.filter(p => p.member === m.id).reduce((a, p) => a + p.amount, 0);
-    return `<div class="member" data-act="member" data-id="${m.id}">
-      ${M.avatar(m.id, 'ring')}
-      <span class="m-n">${M.L(m.n)}</span>
-      <span class="m-a priv">${M.money(tot)}</span>
-    </div>`;
-  }).join('')}</div>`;
+  const s = M.s, seg = s.famSeg || 'feed', ar = s.lang === 'ar';
+  const members = `<div class="members anim">
+    ${M.MEMBERS.map(m => {
+      const tot = (s.purchases || []).filter(p => p.member === m.id).reduce((a, p) => a + p.amount, 0);
+      return `<div class="member" data-act="member" data-id="${m.id}">
+        ${M.avatar(m.id, 'ring')}
+        <span class="m-n">${M.L(m.n)}</span>
+        <span class="m-a priv">${M.money(tot)}</span>
+      </div>`;
+    }).join('')}
+    <div class="member" data-act="family-invite" style="border-style:dashed;border-color:color-mix(in srgb,var(--primary) 45%,var(--line))">
+      <span class="av" style="width:42px;height:42px;background:var(--primary-soft);color:var(--primary)">${M.ico('plus', 19, 2.3)}</span>
+      <span class="m-n" style="color:var(--primary)">${ar ? 'دعوة فرد' : 'Invite'}</span>
+      <span class="m-a">${s.familyCode || (ar ? 'بالكود/الرابط' : 'Code/Link')}</span>
+    </div>
+  </div>`;
   return `${members}
   <div class="anim">${M.segc('famSeg', [['feed', M.t('segFeed')], ['cart', M.t('segCart')]], seg)}</div>
   <div class="seg-body anim" id="segBody">${M.familyBodyHtml()}</div>`;
@@ -104,12 +112,13 @@ M.refreshCartView = () => {
 /* Manual family purchase modal */
 M.acts['add-purch-open'] = () => {
   const ar = M.s.lang === 'ar';
+  const defaultMid = M.s.currentMemberId || M.MEMBERS[0]?.id || 'abu';
   M.sheet.open(M.t('addPurchT'), `<form class="manual-form" data-form="add-purch">
     <label>${M.t('member')}
       <div class="member-pick">
-        ${M.MEMBERS.map((m, idx) => `<button type="button" class="mp-btn ${idx === 0 ? 'on' : ''}" data-act="pick-mem" data-v="${m.id}">${M.avatar(m.id, 'xs')} <span>${M.L(m.n)}</span></button>`).join('')}
+        ${M.MEMBERS.map(m => `<button type="button" class="mp-btn ${m.id === defaultMid ? 'on' : ''}" data-act="pick-mem" data-v="${m.id}">${M.avatar(m.id, 'xs')} <span>${M.L(m.n)}</span></button>`).join('')}
       </div>
-      <input type="hidden" name="member" value="abu">
+      <input type="hidden" name="member" value="${defaultMid}">
     </label>
     <label>${M.t('merchant')}<input name="m" required placeholder="${ar ? 'مثال: سوبرماركت الوفاء…' : 'e.g. Local market…'}" autocomplete="off"></label>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -132,7 +141,8 @@ M.acts['pick-mem'] = el => {
 };
 
 M.saveManualPurchase = f => {
-  const mid = f.member.value || 'abu', mar = f.m.value.trim(), cat = f.cat.value || 'groceries';
+  const mid = f.member.value || M.s.currentMemberId || M.MEMBERS[0]?.id || 'abu';
+  const mar = f.m.value.trim(), cat = f.cat.value || 'groceries';
   const rawA = typeof f.a.value === 'string' ? M.toWesternDigits(f.a.value) : f.a.value;
   const amount = parseFloat(rawA);
   if (!mar || !(amount > 0)) return;
@@ -154,7 +164,6 @@ M.saveManualPurchase = f => {
   M.checkThreshold();
 };
 
-/* Smooth in-place filter transition without destroying the chips bar */
 M.acts['fam-filter'] = el => {
   const nextId = el.dataset.id;
   if (M.s.famFilter === nextId) return;
@@ -174,7 +183,7 @@ M.acts['fam-filter'] = el => {
 };
 
 M.acts['cart-got'] = el => {
-  const i = M.s.cart.find(x => x.id == el.dataset.id);
+  const i = (M.s.cart || []).find(x => x.id == el.dataset.id);
   if (!i) return;
   i.got = !i.got;
   if (M.api) {
@@ -185,7 +194,7 @@ M.acts['cart-got'] = el => {
 };
 
 M.acts['cart-q'] = el => {
-  const i = M.s.cart.find(x => x.id == el.dataset.id);
+  const i = (M.s.cart || []).find(x => x.id == el.dataset.id);
   if (!i) return;
   i.q += +el.dataset.d;
   if (i.q <= 0) {
@@ -204,7 +213,7 @@ M.acts['cart-q'] = el => {
 };
 
 M.acts['cart-del'] = el => {
-  const i = M.s.cart.find(x => x.id == el.dataset.id);
+  const i = (M.s.cart || []).find(x => x.id == el.dataset.id);
   if (!i) return;
   M.s.cart = M.s.cart.filter(x => x !== i);
   if (M.api) {
@@ -216,7 +225,7 @@ M.acts['cart-del'] = el => {
 };
 
 M.acts['cart-clear-got'] = () => {
-  M.s.cart = M.s.cart.filter(x => !x.got);
+  M.s.cart = (M.s.cart || []).filter(x => !x.got);
   if (M.api) {
     M.api.saveLocal(M.s);
     M.api.clearGotCart().catch(() => {});
@@ -225,7 +234,7 @@ M.acts['cart-clear-got'] = () => {
 };
 
 M.acts['cart-edit'] = el => {
-  const it = M.s.cart.find(x => x.id == el.dataset.id);
+  const it = (M.s.cart || []).find(x => x.id == el.dataset.id);
   if (!it) return;
   M.sheet.open(M.t('editItem'), `<form class="manual-form" data-form="cart-edit" data-id="${it.id}">
     <label>${M.t('itemName')}<input name="n" required value="${M.L(it.n)}" autocomplete="off"></label>
@@ -240,7 +249,7 @@ M.acts['cart-edit'] = el => {
 
 M.acts['cart-del-sheet'] = el => {
   const id = el.dataset.id;
-  M.s.cart = M.s.cart.filter(x => x.id != id);
+  M.s.cart = (M.s.cart || []).filter(x => x.id != id);
   if (M.api) {
     M.api.saveLocal(M.s);
     M.api.deleteCartItem(id).catch(() => {});
@@ -251,7 +260,7 @@ M.acts['cart-del-sheet'] = el => {
 };
 
 M.saveCartEdit = f => {
-  const it = M.s.cart.find(x => x.id == f.dataset.id);
+  const it = (M.s.cart || []).find(x => x.id == f.dataset.id);
   if (!it) return;
   const n = f.n.value.trim();
   const rawP = typeof f.p.value === 'string' ? M.toWesternDigits(f.p.value) : f.p.value;

@@ -103,7 +103,7 @@
 .btn:active{transform:scale(.97)}
 .btn.sm{height:36px;font-size:12.5px;padding:0 12px;border-radius:999px;width:auto}
 .btn.tonal{background:var(--primary-soft);color:var(--on-primary-soft)}
-.btn.plain{background:var(--surface-2);color:var(--text)}
+.btn.plain,.btn.ghost{background:var(--surface-2);color:var(--text);border:1px solid var(--line)}
 .phone[data-os=android] .btn{border-radius:999px;height:46px;font-weight:600;font-size:14.5px}
 
 /* Unified Segmented Control */
@@ -211,29 +211,41 @@
 @keyframes feedSwap{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 
-/* ── Notification Banner (Push) & Toast Popup ── */
+/* ── Notification Banner (Push) & Toast Popup — Positioned Safely Below Dynamic Island & Camera Notch ── */
 .notif{
-  position:absolute;z-index:90;top:10px;inset-inline:12px;padding:12px 14px;border-radius:20px;display:flex;gap:12px;align-items:center;
+  position:absolute;z-index:95;
+  top:max(calc(var(--status-h, 54px) + 6px), calc(env(safe-area-inset-top, 48px) + 10px));
+  inset-inline:12px;padding:12px 14px;border-radius:20px;display:flex;gap:12px;align-items:center;
   background:var(--surface);color:var(--text);
   box-shadow:0 16px 36px rgba(0,0,0,.28),0 0 0 1px var(--line);
-  transform:translateY(-150%);transition:transform .45s var(--bounce);cursor:pointer;
+  opacity:0;pointer-events:none;
+  transform:translateY(-180%);transition:transform .45s var(--bounce),opacity .25s ease;cursor:pointer;
 }
-.phone[data-os=android] .notif{top:42px}
-.notif.on{transform:none}
+.phone[data-os=android] .notif{
+  top:max(calc(var(--status-h, 40px) + 6px), calc(env(safe-area-inset-top, 28px) + 10px));
+}
+.notif.on{
+  transform:none;
+  opacity:1;
+  pointer-events:auto;
+}
 .notif .n-ico{width:38px;height:38px;border-radius:12px;flex:none;display:grid;place-items:center;color:#fff;font:700 18px "Readex Pro","IBM Plex Sans Arabic";background:linear-gradient(135deg,#0D9488,#0F766E)}
 .notif .n-app{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;font-weight:500}
 .notif .n-t{font-weight:700;font-size:13.5px;margin-top:1px}
 .notif .n-b{font-size:12px;color:var(--muted);line-height:1.35;margin-top:2px}
 
 .toast{
-  position:absolute;z-index:91;left:50%;bottom:104px;transform:translate(-50%,14px) scale(.94);opacity:0;pointer-events:none;
-  background:#0F172A;color:#F8FAFC;padding:9px 16px;border-radius:999px;font-size:12.5px;font-weight:600;white-space:nowrap;
-  display:flex;gap:7px;align-items:center;transition:transform .35s var(--bounce),opacity .25s;
+  position:absolute;z-index:96;left:50%;bottom:96px;max-width:calc(100% - 28px);
+  transform:translate(-50%,14px) scale(.94);opacity:0;pointer-events:none;
+  background:#0F172A;color:#F8FAFC;padding:9px 16px;border-radius:999px;font-size:12.5px;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  display:flex;gap:7px;align-items:center;justify-content:center;
+  transition:transform .35s var(--bounce),opacity .25s;
   box-shadow:0 10px 24px rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.1);
 }
 .phone[data-theme=dark] .toast{background:#1E293B}
 .toast.on{opacity:1;transform:translate(-50%,0) scale(1)}
-.phone[data-os=android] .toast{inset-inline:18px;left:18px;transform:translateY(14px);border-radius:12px;bottom:104px;padding:12px 16px}
+.phone[data-os=android] .toast{inset-inline:18px;left:18px;max-width:none;transform:translateY(14px);border-radius:12px;bottom:96px;padding:12px 16px}
 .phone[data-os=android] .toast.on{opacity:1;transform:translateY(0)}
 .toast.warn{background:#B45309}.toast.crit{background:#BE123C}
 
