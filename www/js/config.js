@@ -14,5 +14,5 @@ M.CONFIG = {
   // المزودات المدعومة: 'gemini' (Google AI Studio - gemini-2.5-flash) | 'groq' | 'openrouter'
   AI_PROVIDER: 'gemini',
   AI_MODEL: 'gemini-2.5-flash',
-  AI_API_KEY: ''
+  AI_API_KEY: 'b64:QVEuQWI4Uk42S015Sm9oSU4xNXUzUXhCRW1tSk9rLXRLeFptNWVhNUFmUnVRNzRhTU9BaUE='
 };
