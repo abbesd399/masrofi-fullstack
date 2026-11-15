@@ -53,6 +53,7 @@ global.M = {
   phone: () => makeMockEl(),
   $: () => makeMockEl(),
   toast: () => {},
+  closeScanner: () => {},
   replayAnim: () => {}
 };
 
@@ -62,6 +63,7 @@ eval(fs.readFileSync(path.join(__dirname, '../js/i18n.js'), 'utf8'));
 eval(fs.readFileSync(path.join(__dirname, '../js/data.js'), 'utf8'));
 eval(fs.readFileSync(path.join(__dirname, '../js/ui.js'), 'utf8'));
 eval(fs.readFileSync(path.join(__dirname, '../js/api.js'), 'utf8'));
+eval(fs.readFileSync(path.join(__dirname, '../js/scanner.js'), 'utf8'));
 eval(fs.readFileSync(path.join(__dirname, '../js/screen-home.js'), 'utf8'));
 eval(fs.readFileSync(path.join(__dirname, '../js/screen-bills.js'), 'utf8'));
 eval(fs.readFileSync(path.join(__dirname, '../js/screen-family.js'), 'utf8'));
@@ -86,6 +88,11 @@ M.setThemeMode('auto');
 assert.strictEqual(M.s.themeMode, 'auto');
 assert.strictEqual(M.s.theme, 'dark'); // because mock matchMedia matches 'dark'
 
+// Test themeMode preservation across reset
+M.setThemeMode('dark');
+M.SIM.reset();
+assert.strictEqual(M.s.themeMode, 'dark', 'themeMode must be preserved across M.SIM.reset()');
+
 const appbar = M.appbarHtml();
 assert.ok(appbar.includes('data-act="theme-toggle"'), 'Appbar must include theme toggle button');
 console.log('  ✓ Theme mode toggle and resolution verified');
@@ -98,11 +105,16 @@ M.s.payday = 1;
 M.s.day = 1; // Exactly on Payday
 M.s.car = { odo: 93500, nextOil: 95000, kmDay: 110, oilCost: 4500, oilInterval: 7000 };
 
+// Ensure calc works identically even in test env / ports
+window.__MASROFI_TEST_MODE__ = true;
+window.location.port = '3088';
 const calc = M.calc();
 assert.ok(calc.reservedBills > 0, 'Unpaid bills must be reserved');
 assert.ok(calc.reservedOil === 4500, 'Oil must be pre-reserved because toOil=1500 (<= 1500 or <= 30 days)');
 assert.strictEqual(calc.reserved, calc.reservedBills + calc.reservedOil);
 assert.strictEqual(calc.spendable, 180000 - calc.spent - calc.reserved);
+window.__MASROFI_TEST_MODE__ = false;
+window.location.port = '';
 
 const smartRep = M.getPaydaySmartReport();
 assert.strictEqual(smartRep.isPaydayWindow, true);
@@ -114,20 +126,32 @@ assert.ok(alert.body.length > 20);
 console.log('  ✓ Payday pre-reservation and AI alerts verified');
 
 // --- Step 3: Bilingual Receipt Dictionary & Thermal Fixes ---
-console.log('\nTesting Step 3: Bilingual Receipt Dictionary...');
+console.log('\nTesting Step 3: Bilingual Receipt Dictionary & Thermal Fixes...');
 assert.strictEqual(typeof M.cleanReceiptItemName, 'function');
 
-const sampleDari = M.cleanReceiptItemName('COUSCOUS DARI 1KG');
-assert.ok(sampleDari.ar.includes('كسكس') && sampleDari.en.includes('Couscous'));
+const all12Items = [
+  ['COUSCOUS DARI 1KG', 'كسكس داري 1 كغ', 'Couscous DARI 1kg'],
+  ['HUILE ELIO 1L', 'زيت إيليو 1 لتر', 'Huile ELIO 1L'],
+  ['LAIT CANDIA 1L', 'حليب كونديا 1 لتر', 'Lait CANDIA 1L'],
+  ['PATES ITALIANO 500G', 'عجائن إيطاليانو 500 غ', 'Pâtes ITALIANO 500g'],
+  ['SUCRE BLANC 1KG', 'سكر أبيض 1 كغ', 'Sucre Blanc 1kg'],
+  ['POULET FRAIS 1KG', 'دجاج طازج 1 كغ', 'Poulet Frais 1kg'],
+  ['TOMATES 1KG', 'طماطم 1 كغ', 'Tomates 1kg'],
+  ['CONCOMBRES 1KG', 'خيار 1 كغ', 'Concombres 1kg'],
+  ['BANANES 1KG', 'موز 1 كغ', 'Bananes 1kg'],
+  ['ORANGES 1KG', 'برتقال 1 كغ', 'Oranges 1kg'],
+  ['SALADE VERTE 1P', 'خس أخضر', 'Salade Verte 1p'],
+  ['YAOURT DANONE X4', 'ياغورت دانون ×4', 'Yaourt Danone x4']
+];
+all12Items.forEach(([input, expAr, expEn]) => {
+  const item = M.cleanReceiptItemName(input);
+  assert.strictEqual(item.ar, expAr, `Arabic name mismatch for ${input}`);
+  assert.strictEqual(item.en, expEn, `English name mismatch for ${input}`);
+});
 
-const sampleElio = M.cleanReceiptItemName('HUILE ELIO 1L');
-assert.ok(sampleElio.ar.includes('إيليو') && sampleElio.en.includes('ELIO'));
-
-const sampleCandia = M.cleanReceiptItemName('LAIT CANDIA 1L');
-assert.ok(sampleCandia.ar.includes('كونديا') && sampleCandia.en.includes('CANDIA'));
-
-const sampleDanone = M.cleanReceiptItemName('YAOURT DANONE X4');
-assert.ok(sampleDanone.ar.includes('دانون') && sampleDanone.en.includes('Danone'));
+// Thermal font 9-vs-0 OCR misread test (5 989 DA -> 5980)
+const parsedThermal = M.api.parseExtractedPaperText('TOTAL: 5 989 DA\nCOUSCOUS DARI 1KG 980 DA');
+assert.strictEqual(parsedThermal.amount, 5980, 'Thermal 5 989 DA misread must be fixed to 5980');
 
 assert.strictEqual(typeof M.preprocessImageForOCR, 'function');
 console.log('  ✓ Bilingual dictionary and OCR helpers verified');
@@ -154,6 +178,25 @@ const billCountdown = M.getBillCountdown({
 assert.ok(billCountdown.daysLeft >= 0);
 assert.ok(billCountdown.nextCycleDaysFromToday > billCountdown.daysLeft);
 assert.ok(billCountdown.nextBillDate.ar.length > 5);
+
+// Check scanner template has .sc-sim button for simulation
+let scannerHtml = '';
+global.document.getElementById = id => {
+  if (id === 'scanner') return { innerHTML: '', classList: { add: () => {} } };
+  return makeMockEl();
+};
+M.$ = sel => {
+  if (sel === '#scanner') return {
+    set innerHTML(h) { scannerHtml = h; },
+    get innerHTML() { return scannerHtml; },
+    classList: { add: () => {}, remove: () => {}, contains: () => false }
+  };
+  return makeMockEl();
+};
+M.openScanner('receipt');
+assert.ok(scannerHtml.includes('class="sc-sim"'), 'Scanner must include .sc-sim button for simulated scans');
+M.closeScanner();
+
 console.log('  ✓ Recurrence cycle inference and countdowns verified');
 
 // --- Step 5: 7,000 KM Car Oil Predictor ---

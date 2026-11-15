@@ -315,7 +315,7 @@ M.handleOnbStep2 = async f => {
     M.onb.joinCode = code;
     const remote = M.api ? await M.api.pullStateFromSupabaseDirect(true) : null;
     if (remote && (remote.salary > 0 || remote.onboarded)) {
-      const keep = { os: M.s.os, theme: M.s.theme, lang: M.s.lang, tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false };
+      const keep = { os: M.s.os, theme: M.s.theme, themeMode: M.s.themeMode, lang: M.s.lang, tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false };
       Object.assign(M.s, remote, keep);
     }
     M.s.familyCode = code;
@@ -367,7 +367,7 @@ M.handleOnbStep3 = async f => {
   const famName = M.onb.familyName || (ar ? 'محفظة العائلة' : 'Family Wallet');
   const famCode = M.s.familyCode || M.genFamilyCode();
 
-  const keep = { os: M.s.os, theme: M.s.theme, lang: M.s.lang, tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false };
+  const keep = { os: M.s.os, theme: M.s.theme, themeMode: M.s.themeMode, lang: M.s.lang, tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false };
   const clean = M.cleanState();
   Object.assign(M.s, clean, keep, {
     onboarded: true,
@@ -554,7 +554,7 @@ M.SIM = {
     M.checkThreshold();
   },
   reset() {
-    const keep = { os: M.s.os, theme: M.s.theme, lang: M.s.lang, tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false };
+    const keep = { os: M.s.os, theme: M.s.theme, themeMode: M.s.themeMode, lang: M.s.lang, tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false };
     M.s = Object.assign(M.demoSeed(), keep);
     if (M.api) {
       M.api.saveLocal(M.s);
@@ -765,7 +765,7 @@ M.initOfflineSync = async () => {
 
   const local = M.api.loadLocal();
   if (local && (local.onboarded || isTestEnv)) {
-    const keep = { os: M.s.os, theme: M.s.theme, lang: M.s.lang, tab: M.s.tab, billSeg: M.s.billSeg, famSeg: M.s.famSeg, privacy: M.s.privacy };
+    const keep = { os: M.s.os, theme: M.s.theme, themeMode: M.s.themeMode, lang: M.s.lang, tab: M.s.tab, billSeg: M.s.billSeg, famSeg: M.s.famSeg, privacy: M.s.privacy };
     Object.assign(M.s, local, keep);
     M.render();
   }
@@ -786,7 +786,7 @@ M.initOfflineSync = async () => {
 
     const remote = await M.api.fetchState();
     if (remote && (remote.onboarded || isTestEnv)) {
-      const keep = { os: M.s.os, theme: M.s.theme, lang: M.s.lang, tab: M.s.tab, billSeg: M.s.billSeg, famSeg: M.s.famSeg, privacy: M.s.privacy, currentMemberId: M.s.currentMemberId };
+      const keep = { os: M.s.os, theme: M.s.theme, themeMode: M.s.themeMode, lang: M.s.lang, tab: M.s.tab, billSeg: M.s.billSeg, famSeg: M.s.famSeg, privacy: M.s.privacy, currentMemberId: M.s.currentMemberId };
       Object.assign(M.s, remote, keep);
       M.api.saveLocal(M.s);
       if (M.s.onboarded && !urlJoinCode) {

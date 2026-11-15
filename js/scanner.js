@@ -689,6 +689,7 @@ M.openScanner = (mode = 'receipt', auto = false) => {
       <button type="button" class="sc-side" data-act="scan-gallery" aria-label="gallery" title="${ar ? 'اختيار صورة من المعرض' : 'Pick from gallery'}">${M.ico('image', 20)}</button>
       <button type="button" class="shutter" data-act="scan-capture" aria-label="shutter"><span></span></button>
       <button type="button" class="sc-side" data-act="scan-manual" aria-label="manual" title="${ar ? 'إدخال يدوي' : 'Manual entry'}">${M.ico('pen', 20)}</button>
+      <button type="button" class="sc-sim" data-act="scan-run" style="display:none" aria-hidden="true"></button>
     </div>`;
   M.renderZoomDial();
   M.$('#statusbar').classList.add('light-ink');

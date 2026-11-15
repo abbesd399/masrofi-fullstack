@@ -473,13 +473,12 @@ M.recordDetectedHikes = hikes => {
 /* derived numbers — Pre-reserves ALL month bills + predicted 7,000 km Oil Change from Day 1 of Salary (Payday) so user never spends bill/oil money mid-month! */
 M.calc = () => {
   const s = M.s;
-  const isTestEnv = typeof window !== 'undefined' && Boolean(window.__MASROFI_TEST_MODE__ || window.location.port === '3088' || window.location.port === '3099');
   const sal = Math.max(0, Number(s.salary) || 0);
   const spentPurch = (s.purchases || []).reduce((a, p) => a + (Number(p.amount) || 0), 0);
   const paidBills = (s.bills || []).filter(b => b.paid).reduce((a, b) => a + (Number(b.amount) || 0), 0);
   const reservedBills = (s.bills || []).filter(b => !b.paid).reduce((a, b) => a + (Number(b.amount) || 0), 0);
-  const oil = (!isTestEnv && M.getCarOilStatus) ? M.getCarOilStatus() : { dueThisMonth: false, oilCost: 0 };
-  const reservedOil = (!isTestEnv && oil.dueThisMonth && sal > 0) ? (Number(oil.oilCost) || 0) : 0;
+  const oil = M.getCarOilStatus ? M.getCarOilStatus() : { dueThisMonth: false, oilCost: 0 };
+  const reservedOil = (oil.dueThisMonth && sal > 0) ? (Number(oil.oilCost) || 0) : 0;
   const reserved = reservedBills + reservedOil;
   const spent = spentPurch + paidBills;
   const spendable = Math.max(0, sal - spent - reserved);
