@@ -70,19 +70,23 @@ function build() {
     }
   }
 
-  // Sync latest www/ directly into native iOS and Android asset folders for Xcode/Capacitor builds
+
+  // Sync www/ directly into ios/App/App/public and android/app/src/main/assets/public
+  // so Xcode and Android Studio builds always have the exact latest web assets even without running npx cap copy
   const iosPublic = path.join(ROOT, 'ios', 'App', 'App', 'public');
-  copyDir(WWW, iosPublic);
-
+  if (fs.existsSync(path.join(ROOT, 'ios', 'App', 'App'))) {
+    copyDir(WWW, iosPublic);
+    const capCfg = path.join(ROOT, 'capacitor.config.json');
+    if (fs.existsSync(capCfg)) {
+      fs.copyFileSync(capCfg, path.join(ROOT, 'ios', 'App', 'App', 'capacitor.config.json'));
+    }
+  }
   const androidPublic = path.join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'public');
-  copyDir(WWW, androidPublic);
-
-  const nativeTemplatePublic = path.join(ROOT, 'ios', 'App', 'native_template', 'public');
-  if (fs.existsSync(path.dirname(nativeTemplatePublic))) {
-    copyDir(WWW, nativeTemplatePublic);
+  if (fs.existsSync(path.join(ROOT, 'android', 'app', 'src', 'main'))) {
+    copyDir(WWW, androidPublic);
   }
 
-  console.log('[Build] www/ directory and native iOS/Android assets synchronized successfully.');
+  console.log('[Build] www/, ios/App/App/public, and android assets prepared successfully.');
 }
 
 build();

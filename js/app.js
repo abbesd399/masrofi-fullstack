@@ -379,7 +379,6 @@ M.handleOnbStep3 = async f => {
   if (typeof M.syncCarOilItem === 'function') M.syncCarOilItem();
 
   if (M.api) {
-    if (typeof M.api.purgeDemoData === 'function') M.api.purgeDemoData(M.s);
     M.api.saveLocal(M.s);
     M.api.resetSupabaseToCleanFamily(M.s).catch(() => {});
     M.api.updateSalary(sal).catch(() => {});
@@ -555,45 +554,6 @@ if (typeof document !== 'undefined') {
   document.addEventListener('dblclick', ev => ev.preventDefault(), { passive: false });
 }
 
-/* ── Clean Numeric Sanitizer Helpers (Zero input blockage for text/name fields) ── */
-M.getNumericMode = el => {
-  if (!el || el.tagName !== 'INPUT') return null;
-  const im = (el.getAttribute('inputmode') || '').toLowerCase();
-  const type = (el.type || '').toLowerCase();
-  if (type === 'file' || type === 'hidden' || type === 'range' || type === 'date' || type === 'checkbox') return null;
-
-  const name = (el.name || '').toLowerCase();
-  const id = (el.id || '').toLowerCase();
-
-  const intNames = ['payday', 'dueday', 'odo', 'kmday', 'nextoil', 'carodo', 'quantity', 'q', 'sceditdueday'];
-  if (intNames.some(k => name === k || id === k || name.includes(k) || id.includes(k))) return 'integer';
-
-  const decNames = ['salary', 'sal', 'amount', 'amt', 'price', 'fuel', 'fuelprice', 'target', 'saved', 'gtarget', 'gsaved', 'p', 'a', 'obsalary', 'sceditamount', 'cartprice'];
-  if (decNames.some(k => name === k || id === k || name.includes(k) || id.includes(k))) return 'decimal';
-
-  if (im === 'numeric') return 'integer';
-  if (im === 'decimal' || type === 'number') return 'decimal';
-
-  return null;
-};
-
-M.sanitizeNumericValue = (val, mode = 'decimal') => {
-  if (val == null) return '';
-  let s = typeof M.toWesternDigits === 'function' ? M.toWesternDigits(String(val)) : String(val);
-  s = s.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, d => String.fromCharCode(d.charCodeAt(0) & 0x0f));
-
-  if (mode === 'integer') {
-    return s.replace(/[^0-9]/g, '');
-  }
-  s = s.replace(/,/g, '.').replace(/[^0-9.]/g, '');
-  const dotIdx = s.indexOf('.');
-  if (dotIdx !== -1) {
-    s = s.slice(0, dotIdx + 1) + s.slice(dotIdx + 1).replace(/\./g, '');
-  }
-  return s;
-};
-
-/* Global Escape key listener (no preventDefault on input keystrokes) */
 window.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') {
     if (M.sheet?.isOpen) {
@@ -603,35 +563,36 @@ window.addEventListener('keydown', ev => {
     }
   }
 });
-
-/* ── Real-time Input Sanitizer: Only cleans inputmode="numeric" or "decimal" fields ── */
+/* ── Safe Input Handler:
+   - All text/name fields (userName, familyName, carName, mname, merchant, etc.) are 100% unrestricted so the keyboard works freely on iOS & Android.
+   - Numeric fields (inputmode="numeric" or inputmode="decimal") gently strip non-numeric characters on 'input' without blocking keyboard events.
+── */
 phone.addEventListener('input', ev => {
   const el = ev.target;
-  if (!el || el.tagName !== 'INPUT') return;
+  if (!el || el.tagName !== 'INPUT' || typeof el.value !== 'string') return;
+
+  // Keep onboarding text state synced live while typing
+  if (el.name === 'userName') M.onb.userName = el.value;
+  if (el.name === 'familyName') M.onb.familyName = el.value;
+  if (el.name === 'joinCode') M.onb.joinCode = el.value;
 
   const im = (el.getAttribute('inputmode') || '').toLowerCase();
-  const type = (el.type || '').toLowerCase();
-
-  // 1. Strict numeric integer cleaning
-  if (im === 'numeric') {
-    let s = typeof M.toWesternDigits === 'function' ? M.toWesternDigits(el.value) : el.value;
-    s = s.replace(/[^0-9]/g, '');
-    if (el.value !== s) el.value = s;
-    return;
-  }
-
-  // 2. Decimal amount cleaning (allows digits and at most one dot)
-  if (im === 'decimal' || type === 'number') {
-    let s = typeof M.toWesternDigits === 'function' ? M.toWesternDigits(el.value) : el.value;
-    s = s.replace(/,/g, '.').replace(/[^0-9.]/g, '');
-    const dot = s.indexOf('.');
-    if (dot !== -1) {
-      s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '');
+  if (im === 'numeric' || im === 'decimal') {
+    let s = M.toWesternDigits(el.value).replace(/[٫,]/g, '.');
+    if (im === 'numeric') {
+      s = s.replace(/[^0-9]/g, '');
+    } else {
+      s = s.replace(/[^0-9.]/g, '');
+      const parts = s.split('.');
+      if (parts.length > 2) s = parts[0] + '.' + parts.slice(1).join('');
     }
-    if (el.value !== s) el.value = s;
-    return;
+    if (el.value !== s) {
+      el.value = s;
+    }
+  } else if (/[\u0660-\u0669\u06F0-\u06F9]/.test(el.value)) {
+    el.value = M.toWesternDigits(el.value);
   }
-}, true);
+});
 phone.addEventListener('submit', ev => {
   ev.preventDefault();
   const f = ev.target;

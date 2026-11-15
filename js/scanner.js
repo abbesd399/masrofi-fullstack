@@ -1,16 +1,18 @@
-/* AI Camera Scanner — Multi-Camera Phone Switcher + In-App Live Camera (<video playsinline>) + Real Gemini Vision OCR + Price-Hike Detection */
+/* AI Camera Scanner — Clean Native Viewfinder + Hardware Multi-Camera Lens Switcher & Zoom Dial (0.5 · 1x · 2.5) + Auto Receipt/Bill AI */
 M.scan = {
   mode: 'receipt',
   billIdx: 0,
   busy: false,
+  _switchingLens: false,
   timers: [],
   aiExtracted: null,
   aiUsed: false,
   stream: null,
   facing: 'environment',
-  deviceId: null,
-  cameras: [],
-  cameraIdx: 0,
+  zoom: 1,
+  zoomSteps: [0.5, 1, 2.5],
+  lensMap: { ultra: null, wide: null, tele: null, front: null, fusion: null },
+  activeDeviceId: null,
   torch: false,
   customImage: null
 };
@@ -63,81 +65,312 @@ M.clearScanTimers = () => {
   (M.scan.timers || []).forEach(id => { clearTimeout(id); clearInterval(id); });
   M.scan.timers = [];
   M.scan.busy = false;
+  M.scan._switchingLens = false;
 };
 M.addScanTimer = id => { M.scan.timers.push(id); return id; };
 
-/* ── Discover & Label All Phone Cameras (Back Main, Ultra-Wide, Telephoto, Front) ── */
-M.refreshCameraList = async () => {
-  const ar = M.s.lang === 'ar';
-  const defaultCams = [
-    { id: 'env_main', deviceId: null, facing: 'environment', label: { ar: 'الكاميرا الخلفية', en: 'Back Camera' } },
-    { id: 'user_front', deviceId: null, facing: 'user', label: { ar: 'الكاميرا الأمامية', en: 'Front Camera' } }
-  ];
+/* ── Discover Hardware Camera Lenses (Ultra-Wide 0.5x, Wide 1x, Telephoto 2x/2.5x/3x) & Device Zoom Steps ── */
+M.isFrontCameraDevice = (d, lbl = '') => {
+  const l = (lbl || d?.label || '').toLowerCase();
+  if (/front|user|facetime|truedepth|true depth|selfie|avant|أمام|امام/i.test(l)) {
+    return true;
+  }
+  if (d && typeof d.getCapabilities === 'function') {
+    try {
+      const caps = d.getCapabilities();
+      if (Array.isArray(caps?.facingMode)) {
+        if (caps.facingMode.includes('user') && !caps.facingMode.includes('environment')) {
+          return true;
+        }
+      }
+    } catch {}
+  }
+  return false;
+};
 
-  if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
-    M.scan.cameras = defaultCams;
-    M.renderCameraBar();
-    return M.scan.cameras;
+M.isBackCameraDevice = (d, lbl = '') => {
+  if (M.isFrontCameraDevice(d, lbl)) return false;
+  const l = (lbl || d?.label || '').toLowerCase();
+  if (/back|rear|environment|arrière|arriere|خلف/i.test(l)) {
+    return true;
+  }
+  if (d && typeof d.getCapabilities === 'function') {
+    try {
+      const caps = d.getCapabilities();
+      if (Array.isArray(caps?.facingMode)) {
+        if (caps.facingMode.includes('environment')) return true;
+        if (caps.facingMode.includes('user')) return false;
+      }
+    } catch {}
+  }
+  return true;
+};
+
+M.detectPhoneZoomSteps = async () => {
+  if (M.scan.facing === 'user') {
+    M.scan.zoomSteps = [1];
+    M.scan.zoom = 1;
+    M.renderZoomDial();
+    return;
+  }
+
+  const prevMap = M.scan.lensMap || {};
+  const lensMap = {
+    ultra: prevMap.ultra || null,
+    wide: prevMap.wide || null,
+    tele: prevMap.tele || null,
+    front: prevMap.front || null,
+    fusion: prevMap.fusion || null
+  };
+  let hasUltra = Boolean(lensMap.ultra);
+  let hasTele = Boolean(lensMap.tele);
+  let teleZoom = 2;
+
+  // Detect iPhone model optical tele factor from screen geometry (e.g. iPhone 12 Pro Max = 2.5x, 13/14/15/16 Pro = 3x)
+  const sw = Math.min(window.screen?.width || 390, window.screen?.height || 844);
+  const sh = Math.max(window.screen?.width || 390, window.screen?.height || 844);
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || '') || (M.s?.os === 'ios');
+  if (isIOS) {
+    if (sw === 428 && sh === 926) {
+      teleZoom = 2.5; // iPhone 12 Pro Max
+    } else if (sh === 852 || sh === 932 || sh === 874 || sh === 956) {
+      teleZoom = 3; // iPhone 14/15/16 Pro & Pro Max
+    } else {
+      teleZoom = 2.5;
+    }
   }
 
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videoInputs = devices.filter(d => d.kind === 'videoinput' && d.deviceId);
-    if (videoInputs.length >= 2) {
-      let backCount = 0;
-      let frontCount = 0;
-      M.scan.cameras = videoInputs.map((d, idx) => {
-        const raw = (d.label || '').toLowerCase();
-        const isFront = /front|user|facetime|أمام|avant/.test(raw);
-        const isVirtual = /dual|triple|مزدوج|ثلاثي|double/.test(raw);
-        const isUltra = !isFront && !isVirtual && /ultra|0\.5|واسع|grand-angle/.test(raw);
-        const isTele = !isFront && !isVirtual && /tele|zoom|مقرب|تقريب|2\.5|3x|téléobjectif/.test(raw);
-        let arLbl = '';
-        let enLbl = '';
-        let zoomStep = '1';
-        if (isFront) {
-          frontCount++;
-          arLbl = frontCount > 1 ? `الأمامية ${frontCount}` : 'الكاميرا الأمامية';
-          enLbl = frontCount > 1 ? `Front ${frontCount}` : 'Front Camera';
-        } else if (isVirtual) {
-          arLbl = /triple|ثلاثي/.test(raw) ? 'الكاميرا الخلفية الثلاثية' : 'الكاميرا الخلفية المزدوجة';
-          enLbl = /triple|ثلاثي/.test(raw) ? 'Triple Camera' : 'Dual Camera';
-          zoomStep = '1';
-        } else if (isUltra) {
-          arLbl = 'الخلفية الواسعة جدًا (0.5x)';
-          enLbl = 'Ultra-Wide (0.5x)';
-          zoomStep = '0.5';
-        } else if (isTele) {
-          arLbl = 'الخلفية المقربة (Tele)';
-          enLbl = 'Telephoto';
-          zoomStep = '2.5';
-        } else {
-          backCount++;
-          arLbl = backCount === 1 ? 'الخلفية الأساسية (1x)' : `الكاميرا الخلفية ${backCount}`;
-          enLbl = backCount === 1 ? 'Main Back (1x)' : `Back Camera ${backCount}`;
-          zoomStep = '1';
-        }
-        return {
-          id: 'cam_' + idx,
-          deviceId: d.deviceId,
-          facing: isFront ? 'user' : 'environment',
-          isVirtual,
-          zoomStep,
-          label: { ar: arLbl, en: enLbl }
-        };
-      });
-    } else {
-      M.scan.cameras = defaultCams;
+    const track = M.scan.stream?.getVideoTracks?.()[0];
+    const caps = (track && typeof track.getCapabilities === 'function') ? track.getCapabilities() : null;
+    const settings = (track && typeof track.getSettings === 'function') ? track.getSettings() : null;
+
+    // If current stream is an environment (back) camera at 1x, lock its deviceId as default wide if not yet set
+    if (settings?.deviceId && settings?.facingMode !== 'user' && M.scan.facing === 'environment' && M.scan.zoom === 1) {
+      if (!lensMap.wide) {
+        lensMap.wide = settings.deviceId;
+      }
     }
-  } catch {
-    M.scan.cameras = defaultCams;
+
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function') {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter(d => d.kind === 'videoinput' && d.deviceId);
+      const backSingleLenses = [];
+
+      for (let idx = 0; idx < videoInputs.length; idx++) {
+        const d = videoInputs[idx];
+        const lbl = (d.label || '').toLowerCase();
+
+        // 1. Identify and skip Front / FaceTime cameras (NEVER put a front camera into rear lens slots!)
+        if (M.isFrontCameraDevice(d, lbl) || (idx === 0 && videoInputs.length > 1 && !lbl)) {
+          if (!lensMap.front) lensMap.front = d.deviceId;
+          continue;
+        }
+        // 2. Skip depth / LiDAR sensors
+        if (/depth|lidar|عمق/i.test(lbl)) {
+          continue;
+        }
+        // 3. Identify virtual composite multi-camera entries on iOS ("Back Triple Camera", "Back Dual Wide Camera", "Back Dual Camera", "الثلاثية", "المزدوجة")
+        if (/triple|dual|double|ثلاثية|مزدوجة/i.test(lbl)) {
+          if (/triple|ثلاثية/i.test(lbl)) {
+            lensMap.fusion = d.deviceId;
+            hasUltra = true;
+            hasTele = true;
+          } else if (/dual|double|مزدوجة/i.test(lbl)) {
+            if (!lensMap.fusion) lensMap.fusion = d.deviceId;
+            if (/wide|واسعة|grand-angle/i.test(lbl)) hasUltra = true;
+          }
+          continue;
+        }
+
+        if (!M.isBackCameraDevice(d, lbl)) {
+          continue;
+        }
+
+        backSingleLenses.push(d);
+
+        // Match Ultra-Wide (0.5x) in English ("Ultra Wide"), Arabic ("الواسعة جدًا" / "فائقة الاتساع" / "واسعة للغاية"), French ("ultra grand-angle")
+        if (/ultra|0\.5|فائقة|واسعة جد|واسعة للغاية|الواسعة جد|الواسعة للغاية|ultra grand-angle/i.test(lbl)) {
+          lensMap.ultra = d.deviceId;
+          hasUltra = true;
+        } else if (/tele|مقرب|المقربة|تقريب|téléobjectif/i.test(lbl)) {
+          lensMap.tele = d.deviceId;
+          hasTele = true;
+          if (/3x/i.test(lbl)) teleZoom = 3;
+          else if (/2\.5x/i.test(lbl)) teleZoom = 2.5;
+          else if (/2x/i.test(lbl)) teleZoom = 2;
+        } else if (/^back camera$|^الكاميرا الخلفية$|^كاميرا خلفية$|^caméra arrière$|^appareil photo arrière$/i.test(lbl)) {
+          lensMap.wide = d.deviceId;
+        }
+      }
+
+      // Fill any remaining single rear lens slots from verified backSingleLenses (never includes front or virtual cameras)
+      const unassignedBack = backSingleLenses.filter(d => d.deviceId !== lensMap.front);
+      if (!lensMap.wide && unassignedBack.length >= 1) {
+        const firstWide = unassignedBack.find(d => d.deviceId !== lensMap.ultra && d.deviceId !== lensMap.tele);
+        if (firstWide) lensMap.wide = firstWide.deviceId;
+      }
+      if (!lensMap.ultra && unassignedBack.length >= 2) {
+        const candUltra = unassignedBack.find(d => d.deviceId !== lensMap.wide && d.deviceId !== lensMap.tele);
+        if (candUltra) {
+          lensMap.ultra = candUltra.deviceId;
+          hasUltra = true;
+        }
+      }
+      if (!lensMap.tele && unassignedBack.length >= 3) {
+        const candTele = unassignedBack.find(d => d.deviceId !== lensMap.wide && d.deviceId !== lensMap.ultra);
+        if (candTele) {
+          lensMap.tele = candTele.deviceId;
+          hasTele = true;
+        }
+      }
+    }
+
+    if (caps?.zoom) {
+      if (caps.zoom.min < 1) hasUltra = true;
+      if (caps.zoom.max >= 2 && !hasTele) {
+        hasTele = true;
+        if (!isIOS) teleZoom = 2;
+      }
+    }
+  } catch {}
+
+  // Final safety guard: ensure front camera deviceId is NEVER assigned to wide, ultra, or tele
+  if (lensMap.front) {
+    if (lensMap.wide === lensMap.front) lensMap.wide = null;
+    if (lensMap.ultra === lensMap.front) lensMap.ultra = null;
+    if (lensMap.tele === lensMap.front) lensMap.tele = null;
   }
-  if (typeof M.renderZoomDial === 'function') M.renderZoomDial();
-  return M.scan.cameras;
+
+  M.scan.lensMap = lensMap;
+
+  if (hasUltra && hasTele) {
+    M.scan.zoomSteps = [0.5, 1, teleZoom];
+  } else if (hasUltra && !hasTele) {
+    M.scan.zoomSteps = [0.5, 1, 2];
+  } else if (!hasUltra && hasTele) {
+    M.scan.zoomSteps = [1, teleZoom];
+  } else {
+    M.scan.zoomSteps = isIOS ? [0.5, 1, 2.5] : [0.5, 1, 2];
+  }
+
+  if (!M.scan.zoomSteps.includes(M.scan.zoom)) {
+    M.scan.zoom = 1;
+  }
+  M.renderZoomDial();
 };
 
-M.renderCameraBar = () => {
-  if (typeof M.renderZoomDial === 'function') M.renderZoomDial();
+/* Render Native Camera Zoom Dial at Bottom of Viewfinder (0.5 · 1x · 2.5) */
+M.renderZoomDial = () => {
+  const dial = document.getElementById('camZoomDial');
+  if (!dial) return;
+  if (M.scan.facing === 'user') {
+    dial.style.display = 'none';
+    return;
+  }
+  const steps = M.scan.zoomSteps?.length ? M.scan.zoomSteps : [0.5, 1, 2.5];
+  if (steps.length <= 1) {
+    dial.style.display = 'none';
+    return;
+  }
+  dial.style.display = 'inline-flex';
+  dial.style.opacity = '1';
+  dial.innerHTML = steps.map(z => {
+    const active = Number(M.scan.zoom) === Number(z);
+    const label = active ? `${z}x` : `${z}`;
+    return `<button type="button" class="cam-z-btn ${active ? 'on' : ''}" data-act="scan-zoom" data-z="${z}" aria-label="Zoom ${z}x">${label}</button>`;
+  }).join('');
+};
+
+/* Ensure <video id="camVideo"> always fills 100% of .viewfinder with zero letterboxing */
+M.ensureFullBleedVideo = vid => {
+  if (!vid) return;
+  vid.setAttribute('playsinline', '');
+  vid.setAttribute('webkit-playsinline', '');
+  vid.setAttribute('autoplay', '');
+  vid.muted = true;
+  vid.style.position = 'absolute';
+  vid.style.inset = '0';
+  vid.style.width = '100%';
+  vid.style.height = '100%';
+  vid.style.minWidth = '100%';
+  vid.style.minHeight = '100%';
+  vid.style.objectFit = 'cover';
+  vid.style.objectPosition = 'center center';
+};
+
+/* Switch Physical Camera Lens & Hardware Zoom When User Taps 0.5 / 1x / 2.5 */
+M.applyCameraZoom = async targetZ => {
+  if (M.scan._switchingLens || M.scan.busy || !M.scan.open || M.scan.facing === 'user') return;
+  const z = Number(targetZ) || 1;
+  const vid = document.getElementById('camVideo');
+  if (!vid) return;
+
+  // CRITICAL: If already on this exact zoom level and the stream is active, DO NOTHING!
+  // Never re-open or toggle the camera when the user taps 1x (or 0.5x / 2.5x) a second time!
+  if (Number(M.scan.zoom) === z && M.scan.stream && vid.classList.contains('on')) {
+    return;
+  }
+
+  M.scan.zoom = z;
+  M.renderZoomDial();
+
+  M.scan._switchingLens = true;
+  try {
+    const lm = M.scan.lensMap || {};
+    let desiredDeviceId = null;
+    if (z < 1 && lm.ultra) {
+      desiredDeviceId = lm.ultra;
+    } else if (z > 1 && lm.tele) {
+      desiredDeviceId = lm.tele;
+    } else if (lm.wide) {
+      desiredDeviceId = lm.wide;
+    }
+
+    // Never allow a zoom button to target the front camera
+    if (desiredDeviceId && desiredDeviceId === lm.front) {
+      desiredDeviceId = null;
+    }
+
+    let switchedPhysicalLens = false;
+
+    // 1. If a distinct physical rear lens exists for this zoom level (0.5x Ultra-Wide, 1x Wide, or 2.5x Telephoto)
+    //    and isn't currently active, switch to that physical rear lens!
+    if (desiredDeviceId && desiredDeviceId !== M.scan.activeDeviceId && navigator.mediaDevices?.getUserMedia && !M.scan._canvasTimer) {
+      const opened = await M.startCameraStream(desiredDeviceId, { skipDetect: true });
+      if (opened && M.scan.activeDeviceId === desiredDeviceId) {
+        switchedPhysicalLens = true;
+      }
+    }
+
+    // 2. Try native WebRTC hardware zoom on the active video track
+    let hwZoomWorked = false;
+    const track = M.scan.stream?.getVideoTracks?.()[0];
+    if (track && typeof track.getCapabilities === 'function' && typeof track.applyConstraints === 'function') {
+      try {
+        const caps = track.getCapabilities();
+        if (caps && caps.zoom) {
+          const minZ = caps.zoom.min ?? 1;
+          const maxZ = caps.zoom.max ?? 1;
+          const targetHwZ = switchedPhysicalLens ? Math.max(minZ, Math.min(maxZ, 1)) : Math.max(minZ, Math.min(maxZ, z));
+          await track.applyConstraints({ advanced: [{ zoom: targetHwZ }] });
+          if (!switchedPhysicalLens && z >= minZ && z <= maxZ && (maxZ > 1 || minZ < 1)) {
+            hwZoomWorked = true;
+          }
+        }
+      } catch {}
+    }
+
+    // 3. Never shrink #camVideo below scale(1)! If z > 1 and we didn't switch to a dedicated tele lens or hw zoom, apply smooth center zoom
+    M.ensureFullBleedVideo(vid);
+    if (switchedPhysicalLens || hwZoomWorked || z <= 1) {
+      vid.style.transform = 'scale(1)';
+    } else {
+      vid.style.transform = `scale(${z})`;
+    }
+  } finally {
+    M.scan._switchingLens = false;
+  }
 };
 
 /* ── In-App Live Camera Stream (opens camera inside .viewfinder without leaving the app!) ── */
@@ -148,51 +381,66 @@ M.stopCameraStream = () => {
   }
   if (M.scan.stream) {
     try {
-      M.scan.stream.getTracks().forEach(t => t.stop());
+      M.scan.stream.getTracks().forEach(t => {
+        try { t.stop(); } catch {}
+      });
     } catch {}
     M.scan.stream = null;
   }
+  M.scan.activeDeviceId = null;
   const vid = document.getElementById('camVideo');
   if (vid) {
+    try { vid.pause(); } catch {}
     try { vid.srcObject = null; } catch {}
+    vid.style.transform = 'scale(1)';
     vid.classList.remove('on');
   }
 };
 
-M.startCameraStream = async () => {
+M.startCameraStream = async (preferredDeviceId = null, opts = {}) => {
+  const hadActiveStream = Boolean(M.scan.stream);
   M.stopCameraStream();
   const vid = document.getElementById('camVideo');
   if (!vid || !M.scan.open) return false;
 
-  // 1. Primary: Real hardware camera stream inside the app via getUserMedia (Full-bleed cover, no 4:3 box constraints)
+  // Give iOS AVCaptureSession 110ms to release the previous camera hardware lock before opening another lens
+  if (hadActiveStream) {
+    await new Promise(r => setTimeout(r, 110));
+    if (!M.scan.open) return false;
+  }
+
+  // 1. Primary: Real hardware camera stream inside the app via getUserMedia
   if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
-    const isBack = M.scan.facing !== 'user';
-    const targetFacing = isBack ? 'environment' : 'user';
+    const facing = M.scan.facing || 'environment';
+    const lm = M.scan.lensMap || {};
     const constraintsList = [];
 
-    if (M.scan.deviceId) {
-      constraintsList.push({
-        video: {
-          deviceId: { exact: M.scan.deviceId },
-          facingMode: { ideal: targetFacing }
-        },
-        audio: false
-      });
-    }
-
-    if (isBack) {
-      // STRICT: Back camera lens requests MUST NEVER fall back to { video: true } or open front camera
-      constraintsList.push(
-        { video: { facingMode: { exact: 'environment' } }, audio: false },
-        { video: { facingMode: { ideal: 'environment' } }, audio: false },
-        { video: { facingMode: 'environment' }, audio: false }
-      );
-    } else {
+    if (facing === 'user') {
+      // Front camera mode (only when user explicitly tapped the top Flip Camera button)
+      if (lm.front) {
+        constraintsList.push({ video: { deviceId: { exact: lm.front } }, audio: false });
+      }
       constraintsList.push(
         { video: { facingMode: { exact: 'user' } }, audio: false },
-        { video: { facingMode: { ideal: 'user' } }, audio: false },
-        { video: { facingMode: 'user' }, audio: false },
-        { video: true, audio: false }
+        { video: { facingMode: 'user' }, audio: false }
+      );
+    } else {
+      // Rear camera mode ('environment') — STRICTLY forbid opening the front camera!
+      if (preferredDeviceId && preferredDeviceId !== lm.front) {
+        constraintsList.push({
+          video: { deviceId: { exact: preferredDeviceId } },
+          audio: false
+        });
+      }
+      if (lm.wide && lm.wide !== preferredDeviceId && lm.wide !== lm.front) {
+        constraintsList.push({
+          video: { deviceId: { exact: lm.wide } },
+          audio: false
+        });
+      }
+      constraintsList.push(
+        { video: { facingMode: { exact: 'environment' } }, audio: false },
+        { video: { facingMode: { ideal: 'environment' } }, audio: false }
       );
     }
 
@@ -200,35 +448,59 @@ M.startCameraStream = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (!M.scan.open) {
-          stream.getTracks().forEach(t => t.stop());
+          stream.getTracks().forEach(t => { try { t.stop(); } catch {} });
           return false;
         }
+        const activeTrack = stream.getVideoTracks?.()[0];
+        const settings = activeTrack?.getSettings?.() || {};
+        const trackLabel = (activeTrack?.label || '').toLowerCase();
 
-        // Hardware facing guard: if user requested back camera, verify hardware did not give front lens
-        const track = stream.getVideoTracks?.()[0];
-        const settings = track?.getSettings ? track.getSettings() : {};
-        if (isBack && settings.facingMode === 'user') {
-          track.stop();
-          continue; // try next constraint or fallback
+        // Guard: If we requested the BACK camera ('environment'), reject any stream that iOS opened on the FRONT camera!
+        if (facing === 'environment' && (settings.facingMode === 'user' || M.isFrontCameraDevice(activeTrack, trackLabel))) {
+          if (settings.deviceId && !M.scan.lensMap.front) {
+            M.scan.lensMap.front = settings.deviceId;
+          }
+          stream.getTracks().forEach(t => { try { t.stop(); } catch {} });
+          await new Promise(r => setTimeout(r, 80));
+          continue;
+        }
+
+        // Guard: If we requested the FRONT camera ('user'), reject any stream that opened on the BACK camera!
+        if (facing === 'user' && settings.facingMode === 'environment') {
+          stream.getTracks().forEach(t => { try { t.stop(); } catch {} });
+          await new Promise(r => setTimeout(r, 80));
+          continue;
         }
 
         M.scan.stream = stream;
+        M.scan.activeDeviceId = settings.deviceId || preferredDeviceId || null;
+        if (facing === 'user' && settings.deviceId) {
+          M.scan.lensMap.front = settings.deviceId;
+        }
+        M.ensureFullBleedVideo(vid);
         vid.srcObject = stream;
-        vid.setAttribute('playsinline', '');
-        vid.setAttribute('webkit-playsinline', '');
-        vid.muted = true;
+        vid.style.transform = 'scale(1)';
+        vid.onloadedmetadata = () => M.ensureFullBleedVideo(vid);
         await vid.play().catch(() => {});
         vid.classList.add('on');
-        await M.refreshCameraList();
+        if (!opts.skipDetect) {
+          await M.detectPhoneZoomSteps();
+        } else {
+          M.renderZoomDial();
+        }
         return true;
       } catch {
-        // try next fallback constraint
+        // try next constraint in list
       }
     }
   }
 
-  // 2. Fallback: In-app live viewfinder stream when testing on desktop without webcam
-  await M.refreshCameraList();
+  // 2. Fallback: In-app live viewfinder stream when testing on desktop without a physical webcam
+  if (!opts.skipDetect) {
+    await M.detectPhoneZoomSteps();
+  } else {
+    M.renderZoomDial();
+  }
   try {
     const c = document.createElement('canvas');
     c.width = 720;
@@ -251,10 +523,9 @@ M.startCameraStream = async () => {
       const stream = c.captureStream(15);
       M.scan.stream = stream;
       M.scan._canvasTimer = setInterval(drawFrame, 200);
+      M.ensureFullBleedVideo(vid);
       vid.srcObject = stream;
-      vid.setAttribute('playsinline', '');
-      vid.setAttribute('webkit-playsinline', '');
-      vid.muted = true;
+      vid.style.transform = 'scale(1)';
       await vid.play().catch(() => {});
       vid.classList.add('on');
       return true;
@@ -266,13 +537,23 @@ M.startCameraStream = async () => {
 /* Capture current video frame from #camVideo as optimized JPEG DataURL */
 M.captureFrameFromVideo = () => {
   const vid = document.getElementById('camVideo');
-  if (!vid || !vid.classList.contains('on') || !(vid.videoWidth > 0)) {
+  if (!vid || !vid.classList.contains('on') || !(vid.videoWidth > 0 && vid.videoHeight > 0)) {
     return null;
   }
   try {
     const maxDim = 1280;
-    let w = vid.videoWidth;
-    let h = vid.videoHeight;
+    const vw = vid.videoWidth;
+    const vh = vid.videoHeight;
+    const isCssScaled = vid.style.transform && vid.style.transform.includes('scale(') && !vid.style.transform.includes('scale(1)');
+    const z = (isCssScaled && Number(M.scan.zoom) > 1) ? Number(M.scan.zoom) : 1;
+
+    const sx = z > 1 ? Math.round((vw - vw / z) / 2) : 0;
+    const sy = z > 1 ? Math.round((vh - vh / z) / 2) : 0;
+    const sw = z > 1 ? Math.round(vw / z) : vw;
+    const sh = z > 1 ? Math.round(vh / z) : vh;
+
+    let w = sw;
+    let h = sh;
     if (w > maxDim || h > maxDim) {
       if (w > h) {
         h = Math.round((h * maxDim) / w);
@@ -286,7 +567,7 @@ M.captureFrameFromVideo = () => {
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(vid, 0, 0, w, h);
+    ctx.drawImage(vid, sx, sy, sw, sh, 0, 0, w, h);
     return canvas.toDataURL('image/jpeg', 0.85);
   } catch {
     return null;
@@ -327,13 +608,26 @@ M.compressImageDataUrl = dataUrl => new Promise(resolve => {
 
 M.capturePhoto = async (sourceType = 'camera') => {
   if (sourceType === 'camera') {
-    const liveFrame = M.captureFrameFromVideo();
-    if (liveFrame) return liveFrame;
+    // Wait briefly if a lens switch (0.5x / 1x / 2.5x) is currently completing
+    for (let i = 0; i < 12 && M.scan._switchingLens; i++) {
+      await new Promise(r => setTimeout(r, 50));
+    }
+    // Wait up to 450ms for video frame dimensions if stream is active
+    if (M.scan.stream) {
+      for (let i = 0; i < 9; i++) {
+        const frame = M.captureFrameFromVideo();
+        if (frame) return frame;
+        await new Promise(r => setTimeout(r, 50));
+      }
+    }
+    // Otherwise start the camera stream and grab the frame
     const started = await M.startCameraStream();
     if (started) {
-      await new Promise(r => setTimeout(r, 250));
-      const frameAfterStart = M.captureFrameFromVideo();
-      if (frameAfterStart) return frameAfterStart;
+      for (let i = 0; i < 10; i++) {
+        const frameAfterStart = M.captureFrameFromVideo();
+        if (frameAfterStart) return frameAfterStart;
+        await new Promise(r => setTimeout(r, 50));
+      }
     }
   }
 
@@ -359,13 +653,14 @@ M.capturePhoto = async (sourceType = 'camera') => {
   });
 };
 
-/* Clean, 100% Native Camera Scanner UI with Multi-Camera Phone Switcher */
+/* Clean, Clutter-Free Native Camera Scanner UI — Zero Top Text Lists, Zero Bottom Text Overlap, Pure Zoom Dial (0.5 · 1x · 2.5) */
 M.openScanner = (mode = 'receipt', auto = false) => {
   M.clearScanTimers();
   M.scan.mode = mode;
   M.scan.open = true;
   M.scan.aiExtracted = null;
   M.scan.aiUsed = false;
+  M.scan.zoom = 1;
   const sc = M.$('#scanner');
   const ar = M.s.lang === 'ar';
 
@@ -376,9 +671,7 @@ M.openScanner = (mode = 'receipt', auto = false) => {
       <button type="button" class="sc-x" data-act="scan-close" aria-label="close">${M.ico('close', 18, 2.4)}</button>
       <h3>${M.ico('spark', 15, 2)} ${M.t('scan')}</h3>
       <div style="display:flex;gap:6px;align-items:center">
-        <button type="button" class="sc-x" data-act="scan-flip" aria-label="switch camera" title="${ar ? 'التبديل بين كاميرات الهاتف' : 'Switch phone cameras'}">
-          ${M.ico('flip', 18)}
-        </button>
+        <button type="button" class="sc-x" data-act="scan-flip" aria-label="flip camera" title="${ar ? 'قلب الكاميرا' : 'Flip camera'}">${M.ico('flip', 17)}</button>
         <button type="button" class="sc-x" data-act="scan-flash" aria-label="flash">${M.ico('flash', 18)}</button>
       </div>
     </div>
@@ -388,7 +681,7 @@ M.openScanner = (mode = 'receipt', auto = false) => {
       <div class="vf-captured" id="vfCaptured"></div>
       <div class="vf-frame" id="vfFrame"><i></i><i></i><i></i><i></i></div>
       <div class="laser" id="laser"></div>
-      <div class="cam-zoom-dial" id="camZoomDial"></div>
+      <div class="cam-zoom-dial" id="camZoomDial" dir="ltr"></div>
       <div class="ai-steps" id="aiSteps"></div>
       <div class="flashfx" id="flashfx"></div>
     </div>
@@ -396,13 +689,12 @@ M.openScanner = (mode = 'receipt', auto = false) => {
       <button type="button" class="sc-side" data-act="scan-gallery" aria-label="gallery" title="${ar ? 'اختيار صورة من المعرض' : 'Pick from gallery'}">${M.ico('image', 20)}</button>
       <button type="button" class="shutter" data-act="scan-capture" aria-label="shutter"><span></span></button>
       <button type="button" class="sc-side" data-act="scan-manual" aria-label="manual" title="${ar ? 'إدخال يدوي' : 'Manual entry'}">${M.ico('pen', 20)}</button>
-      <button type="button" class="sc-sim" data-act="scan-run" style="display:none" aria-hidden="true"></button>
     </div>`;
+  M.renderZoomDial();
   M.$('#statusbar').classList.add('light-ink');
   requestAnimationFrame(() => {
     if (!M.scan.open) return;
     sc.classList.add('on');
-    M.renderZoomDial();
     if (!auto) {
       M.startCameraStream();
     }
@@ -410,183 +702,26 @@ M.openScanner = (mode = 'receipt', auto = false) => {
   if (auto) M.addScanTimer(setTimeout(() => M.scan.open && M.runScan(), 700));
 };
 
-/* Switch / Cycle through all available phone cameras */
+/* Tap 0.5 / 1x / 2.5 in the bottom zoom dial */
+M.acts['scan-zoom'] = el => {
+  if (M.scan.busy || M.scan._switchingLens) return;
+  const z = Number(el.dataset.z) || 1;
+  M.applyCameraZoom(z);
+};
+
+/* Flip between back and front camera */
 M.acts['scan-flip'] = async el => {
-  if (M.scan.busy) return;
-  M.replayAnim(el, 'bump', 350);
-  const ar = M.s.lang === 'ar';
-  const cams = M.scan.cameras?.length ? M.scan.cameras : [
-    { id: 'env_main', deviceId: null, facing: 'environment', label: { ar: 'الكاميرا الخلفية', en: 'Back Camera' } },
-    { id: 'user_front', deviceId: null, facing: 'user', label: { ar: 'الكاميرا الأمامية', en: 'Front Camera' } }
-  ];
-  M.scan.cameraIdx = ((M.scan.cameraIdx || 0) + 1) % cams.length;
-  const chosen = cams[M.scan.cameraIdx];
-  M.scan.deviceId = chosen.deviceId || null;
-  M.scan.facing = chosen.facing || (M.scan.facing === 'environment' ? 'user' : 'environment');
-  M.stopCameraStream();
-  await new Promise(r => setTimeout(r, 60));
-  const ok = await M.startCameraStream();
-  if (!ok) {
-    M.scan.deviceId = null;
-    M.scan.facing = 'environment';
+  if (M.scan.busy || M.scan._switchingLens) return;
+  M.scan._switchingLens = true;
+  try {
+    M.replayAnim(el, 'bump', 350);
+    M.scan.facing = M.scan.facing === 'environment' ? 'user' : 'environment';
+    M.scan.zoom = 1;
     await M.startCameraStream();
-  }
-  M.renderZoomDial();
-  M.toast(`${M.ico('camera', 15, 2)} ${ar ? 'تم التبديل إلى: ' : 'Switched to: '}${M.L(chosen.label)}`);
-};
-
-M.acts['scan-pick-cam'] = async el => {
-  if (M.scan.busy) return;
-  const ar = M.s.lang === 'ar';
-  const idx = Number(el.dataset.idx) || 0;
-  const cams = M.scan.cameras?.length ? M.scan.cameras : [
-    { id: 'env_main', deviceId: null, facing: 'environment', label: { ar: 'الكاميرا الخلفية', en: 'Back Camera' } },
-    { id: 'user_front', deviceId: null, facing: 'user', label: { ar: 'الكاميرا الأمامية', en: 'Front Camera' } }
-  ];
-  const chosen = cams[idx] || cams[0];
-  M.scan.cameraIdx = idx;
-  M.scan.deviceId = chosen.deviceId || null;
-  M.scan.facing = chosen.facing || 'environment';
-  M.stopCameraStream();
-  await new Promise(r => setTimeout(r, 60));
-  const ok = await M.startCameraStream();
-  if (!ok) {
-    M.scan.deviceId = null;
-    M.scan.facing = 'environment';
-    await M.startCameraStream();
-  }
-  M.renderZoomDial();
-  M.toast(`${M.ico('camera', 15, 2)} ${ar ? 'تم اختيار: ' : 'Selected: '}${M.L(chosen.label)}`);
-};
-
-/* ── Hardware Camera Lens & Zoom Steps Detection ── */
-M.detectPhoneZoomSteps = () => {
-  const cams = M.scan.cameras || [];
-  let teleStep = '2.5';
-  cams.forEach(c => {
-    const s = ((c.label?.en || '') + ' ' + (c.label?.ar || '') + ' ' + (c.id || '')).toLowerCase();
-    if (s.includes('3x') || s.includes('telephoto 3') || s.includes('3.0')) teleStep = '3';
-    else if (s.includes('2.5x') || s.includes('telephoto 2.5')) teleStep = '2.5';
-    else if (s.includes('2x') || s.includes('telephoto 2')) {
-      if (teleStep !== '3' && teleStep !== '2.5') teleStep = '2';
-    }
-  });
-
-  if (M.scan.stream) {
-    const track = M.scan.stream.getVideoTracks?.()[0];
-    if (track && typeof track.getCapabilities === 'function') {
-      try {
-        const caps = track.getCapabilities();
-        if (caps.zoom && caps.zoom.max) {
-          if (caps.zoom.max >= 3) teleStep = '3';
-          else if (caps.zoom.max >= 2.5) teleStep = '2.5';
-          else if (caps.zoom.max >= 2 && teleStep !== '3' && teleStep !== '2.5') teleStep = '2';
-        }
-      } catch {}
-    }
-  }
-  return ['0.5', '1', teleStep];
-};
-
-M.renderZoomDial = () => {
-  const dial = document.getElementById('camZoomDial');
-  if (!dial) return;
-  const steps = M.detectPhoneZoomSteps();
-  const curZoom = M.scan.zoom || '1';
-  dial.innerHTML = steps.map(z => {
-    const isThis = String(z) === String(curZoom);
-    const label = isThis ? `${z}x` : z;
-    return `<button type="button" class="cam-z-btn ${isThis ? 'on' : ''}" data-act="scan-zoom" data-zoom="${z}">${label}</button>`;
-  }).join('');
-};
-
-/* Camera Zoom Dial (0.5 · 1x · 2.5/3x) with Apple Gold Active Indicator */
-M.acts['scan-zoom'] = async el => {
-  if (M.scan.busy) return;
-  const zoom = el.dataset.zoom || '1';
-  // No-Op on repeated tap if already active with live back camera
-  if (M.scan.facing !== 'user' && String(M.scan.zoom) === String(zoom) && M.scan.stream?.active) {
-    return;
-  }
-  await M.applyCameraZoom(zoom);
-};
-
-M.applyCameraZoom = async (zoom = '1') => {
-  M.scan.zoom = String(zoom);
-  const zNum = Number(zoom) || 1;
-  // Strictly enforce back camera mode when zooming via dial
-  M.scan.facing = 'environment';
-
-  // 1. Update UI dial buttons
-  const dial = document.getElementById('camZoomDial');
-  if (dial) {
-    const btns = dial.querySelectorAll('.cam-z-btn');
-    btns.forEach(b => {
-      const isThis = String(b.dataset.zoom) === String(zoom);
-      b.classList.toggle('on', isThis);
-      const base = b.dataset.zoom;
-      b.textContent = isThis ? `${base}x` : base;
-    });
-  }
-
-  // 2. Hardware camera lens switching (Ultra-wide 0.5x vs Wide 1x vs Telephoto 2.5x/3x)
-  // Strictly filter back lenses only and avoid virtual/combined multi-camera setups
-  const backCams = (M.scan.cameras || []).filter(c => c.facing === 'environment' && !c.isVirtual);
-  if (backCams.length > 1) {
-    let targetCam = null;
-    if (zNum < 1) {
-      targetCam = backCams.find(c => c.zoomStep === '0.5' || /ultra|0\.5|واسع|grand-angle/i.test((c.label?.en || '') + ' ' + (c.label?.ar || '')));
-    } else if (zNum > 1.4) {
-      targetCam = backCams.find(c => c.zoomStep === '2.5' || /tele|zoom|مقرب|تقريب|2\.5|3x|téléobjectif/i.test((c.label?.en || '') + ' ' + (c.label?.ar || '')));
-    } else {
-      targetCam = backCams.find(c => c.zoomStep === '1' && !/ultra|0\.5|tele|zoom/i.test((c.label?.en || '') + ' ' + (c.label?.ar || ''))) || backCams[0];
-    }
-
-    if (targetCam && targetCam.deviceId && targetCam.deviceId !== M.scan.deviceId) {
-      M.scan.deviceId = targetCam.deviceId;
-      M.scan.facing = 'environment';
-      M.stopCameraStream();
-      await new Promise(r => setTimeout(r, 60)); // 60ms delay for iOS AVCaptureSession to release hardware
-      const ok = await M.startCameraStream();
-      if (!ok) {
-        M.scan.deviceId = null;
-        M.scan.facing = 'environment';
-        await M.startCameraStream();
-      }
-    }
-  }
-
-  // 3. Hardware digital/optical track zoom
-  let trackZoomApplied = false;
-  if (M.scan.stream) {
-    const track = M.scan.stream.getVideoTracks?.()[0];
-    if (track && typeof track.getCapabilities === 'function') {
-      try {
-        const caps = track.getCapabilities();
-        if (caps.zoom) {
-          const targetZ = Math.min(caps.zoom.max || 10, Math.max(caps.zoom.min || 1, zNum));
-          await track.applyConstraints({ advanced: [{ zoom: targetZ }] });
-          trackZoomApplied = true;
-        }
-      } catch {}
-    }
-  }
-
-  // 4. Viewfinder visual zoom scale
-  // CRITICAL: NEVER apply scale(0.5) to #camVideo so it never shrinks in the center!
-  // Must remain 100% full size (scale(1) / 'none') for 0.5x and 1x.
-  const vid = document.getElementById('camVideo');
-  if (vid) {
-    if (zNum <= 1 || trackZoomApplied) {
-      vid.style.transform = 'none';
-    } else {
-      vid.style.transform = `scale(${zNum})`;
-      vid.style.transformOrigin = 'center center';
-    }
-    vid.style.transition = 'transform .22s cubic-bezier(0.34, 1.56, 0.64, 1)';
+  } finally {
+    M.scan._switchingLens = false;
   }
 };
-M.setCameraZoom = M.applyCameraZoom;
 
 M.closeScanner = () => {
   M.clearScanTimers();
@@ -622,7 +757,7 @@ M.runScan = async (customImage = null) => {
   const $ = id => document.getElementById(id), mode = M.scan.mode;
   M.replayAnim(document.querySelector('.shutter'), 'snap', 350);
   M.replayAnim($('flashfx'), 'on', 460);
-  if ($('vfHint')) $('vfHint').style.opacity = 0;
+  if ($('camZoomDial')) $('camZoomDial').style.opacity = 0;
 
   let aiPromise = null;
   if (customImage) {
@@ -678,43 +813,25 @@ M.scanResult = (mode, customImage = null) => {
   M.scan.customImage = customImage;
   const ar = M.s.lang === 'ar';
   const aiExt = M.scan.aiExtracted;
-
-  // Auto-detect mode: AI decision automatically resolves between purchase receipt and bill
-  let resolvedMode = mode;
-  if (aiExt && aiExt.mode) {
-    resolvedMode = aiExt.mode;
-  } else if (aiExt && (aiExt.biller || aiExt.dueDay || aiExt.kind)) {
-    resolvedMode = 'bill';
-  } else if (aiExt && aiExt.merchant) {
-    resolvedMode = 'receipt';
-  } else if (!resolvedMode || resolvedMode === 'auto') {
-    resolvedMode = 'receipt';
+  if (aiExt) {
+    const combinedTitle = ((aiExt.biller?.ar || aiExt.biller || '') + ' ' + (aiExt.merchant?.ar || aiExt.merchant || '')).toLowerCase();
+    const looksLikeBill = aiExt.mode === 'bill' || Boolean(aiExt.biller && !aiExt.merchant) || /(sonelgaz|سونلغاز|كهرباء|غاز|seaal|سيال|ماء|تأمين|saa|alliance|ciar|idoom|إيدوم|اتصالات|كراء|قسط|فاتورة|facture)/.test(combinedTitle);
+    mode = looksLikeBill ? 'bill' : (aiExt.mode === 'receipt' ? 'receipt' : mode);
+    M.scan.mode = mode;
   }
-  mode = resolvedMode;
-  M.scan.mode = resolvedMode;
-
   const samp = M.BILL_SAMPLES[M.scan.billIdx || 0];
   const isRealPhoto = Boolean(customImage);
-  const aiWorked = Boolean(M.scan.aiUsed && aiExt);
 
-  const defaultMerchant = isRealPhoto && !aiWorked
-    ? (ar ? 'وصل مشتريات ممسوح' : 'Scanned Receipt')
-    : (ar ? 'أونو هايبر' : 'Uno Hypermarket');
-  const defaultAmount = isRealPhoto && !aiWorked ? '' : 3450;
-
-  const rMerchant = aiExt?.merchant ? M.L(aiExt.merchant) : defaultMerchant;
-  const rAmount = aiExt?.amount ? Number(aiExt.amount) : defaultAmount;
+  const rMerchant = aiExt?.merchant ? M.L(aiExt.merchant) : (ar ? 'فاتورة مشتريات' : 'Purchase Receipt');
+  const rAmount = (aiExt?.amount && Number(aiExt.amount) > 0) ? Number(aiExt.amount) : 3450;
   const rCat = (aiExt?.cat && M.CATS[aiExt.cat]) ? aiExt.cat : 'groceries';
   const curMemberId = aiExt?.member && M.MEMBERS.some(m => m.id === aiExt.member)
     ? aiExt.member
     : (M.s.currentMemberId || M.MEMBERS[0]?.id || 'abu');
 
-  const defaultBiller = isRealPhoto && !aiWorked
-    ? (ar ? 'فاتورة ممسوحة' : 'Scanned Bill')
-    : M.L(samp.biller);
-  const bBiller = aiExt?.biller ? M.L(aiExt.biller) : defaultBiller;
-  const bKind = aiExt?.kind || samp.kind;
-  const bAmount = aiExt?.amount ? Number(aiExt.amount) : (isRealPhoto && !aiWorked ? '' : samp.amount);
+  const bBiller = aiExt?.biller ? M.L(aiExt.biller) : M.L(samp.biller);
+  const bKind = aiExt?.kind || samp.kind || 'var';
+  const bAmount = (aiExt?.amount && Number(aiExt.amount) > 0) ? Number(aiExt.amount) : samp.amount;
   const bDueDay = aiExt?.dueDay || samp.dueDay || 18;
   const bDueText = aiExt?.dueText ? M.L(aiExt.dueText) : M.L(samp.dueText);
   const bIsCurrent = aiExt?.isCurrentMonth !== undefined ? Boolean(aiExt.isCurrentMonth) : samp.isCurrentMonth;
@@ -734,7 +851,7 @@ M.scanResult = (mode, customImage = null) => {
   const fields = mode === 'receipt'
     ? [
         [M.t('merchant'), rMerchant],
-        [M.t('amount'), (rAmount || 0) ? (M.fmt(rAmount) + ' ' + M.t('cur')) : (ar ? 'أدخل المبلغ' : 'Enter amount')],
+        [M.t('amount'), M.fmt(rAmount) + ' ' + M.t('cur')],
         [M.t('category'), M.L(M.CATS[rCat].n)],
         [M.t('member'), M.L(M.member(curMemberId).n)],
         [M.t('autoDest'), M.t('segFeed')]
@@ -742,7 +859,7 @@ M.scanResult = (mode, customImage = null) => {
     : [
         [M.t('biller'), bBiller],
         [M.t('billType'), M.t(bKind === 'var' ? 'billVar' : 'billFixed')],
-        [M.t('amount'), (bAmount || 0) ? (M.fmt(bAmount) + ' ' + M.t('cur')) : (ar ? 'أدخل المبلغ' : 'Enter amount')],
+        [M.t('amount'), M.fmt(bAmount) + ' ' + M.t('cur')],
         [M.t('dueDate'), bDueText],
         [M.t('autoDest'), bIsCurrent ? M.t('destMonth') : M.t('destSched')]
       ];
@@ -761,52 +878,58 @@ M.scanResult = (mode, customImage = null) => {
   if (dup) {
     alerts += `<div class="alert-box" style="--bc:var(--crit);margin-bottom:8px"><span class="ab-i">${M.ico('copy', 20)}</span><div>${M.t('dupWarn')}</div></div>`;
   }
-  if (isRealPhoto && !aiWorked) {
-    alerts += `<div class="alert-box" style="--bc:var(--warn)">
-      <span class="ab-i">${M.ico('spark', 20)}</span>
-      <div style="flex:1">
-        <b>${ar ? 'تحقق من بيانات الورقة الممسوحة' : 'Verify scanned paper details'}</b><br>
-        <span>${ar ? 'يمكنك تعديل اسم المتجر أو المبلغ أدناه قبل الحفظ.' : 'You can edit the extracted details below before saving.'}</span>
+
+  const typeToggleHtml = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px">
+      <div class="kind-pick" style="flex:1;margin:0">
+        <button type="button" class="kp-btn ${mode === 'receipt' ? 'on' : ''}" data-act="scan-switch-detected" data-m="receipt">${M.ico('cart', 13, 2)} <span>${ar ? 'إيصال مشتريات' : 'Purchase Receipt'}</span></button>
+        <button type="button" class="kp-btn ${mode === 'bill' ? 'on' : ''}" data-act="scan-switch-detected" data-m="bill">${M.ico('receipt', 13, 2)} <span>${ar ? 'فاتورة / التزام' : 'Bill / Obligation'}</span></button>
       </div>
+      <button type="button" class="paid-btn" data-act="scan-toggle-edit" style="height:36px;padding:0 11px;font-size:11.5px;flex:none">
+        ${M.ico('pen', 13)} <span style="margin-inline-start:4px">${ar ? 'تعديل' : 'Edit'}</span>
+      </button>
     </div>`;
-  }
 
   const editableHtml = mode === 'receipt' ? `
-    <div class="manual-form" id="scanEditBox" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
-      <div style="font-size:11.5px;font-weight:700;color:var(--muted)">${ar ? 'تعديل أو تأكيد البيانات المستخرجة من الورقة:' : 'Verify or edit extracted paper details:'}</div>
-      <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:8px">
-        <label>${M.t('merchant')}<input id="scEditMerchant" value="${rMerchant}" autocomplete="off"></label>
-        <label>${M.t('amount')} (${M.t('cur')})<input id="scEditAmount" type="text" inputmode="decimal" value="${rAmount}" placeholder="0"></label>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <label>${M.t('category')}
-          <select id="scEditCat">
-            ${Object.entries(M.CATS).map(([k, v]) => `<option value="${k}" ${k === rCat ? 'selected' : ''}>${M.L(v.n)}</option>`).join('')}
-          </select>
-        </label>
-        <label>${M.t('member')}
-          <select id="scEditMember">
-            ${M.MEMBERS.map(m => `<option value="${m.id}" ${m.id === curMemberId ? 'selected' : ''}>${M.L(m.n)}</option>`).join('')}
-          </select>
-        </label>
+    <div id="scanEditBox" style="margin-top:4px">
+      ${typeToggleHtml}
+      <div class="manual-form" id="scanEditFields" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:8px">
+          <label>${M.t('merchant')}<input id="scEditMerchant" value="${rMerchant}" autocomplete="off"></label>
+          <label>${M.t('amount')} (${M.t('cur')})<input id="scEditAmount" type="text" inputmode="decimal" value="${rAmount}" placeholder="0"></label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label>${M.t('category')}
+            <select id="scEditCat">
+              ${Object.entries(M.CATS).map(([k, v]) => `<option value="${k}" ${k === rCat ? 'selected' : ''}>${M.L(v.n)}</option>`).join('')}
+            </select>
+          </label>
+          <label>${M.t('member')}
+            <select id="scEditMember">
+              ${M.MEMBERS.map(m => `<option value="${m.id}" ${m.id === curMemberId ? 'selected' : ''}>${M.L(m.n)}</option>`).join('')}
+            </select>
+          </label>
+        </div>
       </div>
     </div>` : `
-    <div class="manual-form" id="scanEditBox" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
-      <div style="font-size:11.5px;font-weight:700;color:var(--muted)">${ar ? 'تعديل أو تأكيد بيانات الفاتورة المستخرجة:' : 'Verify or edit extracted bill details:'}</div>
-      <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:8px">
-        <label>${M.t('biller')}<input id="scEditBiller" value="${bBiller}" autocomplete="off"></label>
-        <label>${M.t('amount')} (${M.t('cur')})<input id="scEditAmount" type="text" inputmode="decimal" value="${bAmount}" placeholder="0"></label>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <label>${M.t('billType')}
-          <select id="scEditKind">
-            <option value="var" ${bKind === 'var' ? 'selected' : ''}>${M.t('billVar')}</option>
-            <option value="fixed" ${bKind === 'fixed' ? 'selected' : ''}>${M.t('billFixed')}</option>
-          </select>
-        </label>
-        <label>${ar ? 'يوم الاستحقاق بالشهر' : 'Due Day (1-30)'}
-          <input id="scEditDueDay" type="text" inputmode="numeric" value="${bDueDay}">
-        </label>
+    <div id="scanEditBox" style="margin-top:4px">
+      ${typeToggleHtml}
+      <div class="manual-form" id="scanEditFields" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:8px">
+          <label>${M.t('biller')}<input id="scEditBiller" value="${bBiller}" autocomplete="off"></label>
+          <label>${M.t('amount')} (${M.t('cur')})<input id="scEditAmount" type="text" inputmode="decimal" value="${bAmount}" placeholder="0"></label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label>${M.t('billType')}
+            <select id="scEditKind">
+              <option value="var" ${bKind === 'var' ? 'selected' : ''}>${M.t('billVar')}</option>
+              <option value="fixed" ${bKind === 'fixed' ? 'selected' : ''}>${M.t('billFixed')}</option>
+            </select>
+          </label>
+          <label>${ar ? 'يوم الاستحقاق بالشهر' : 'Due Day (1-30)'}
+            <input id="scEditDueDay" type="text" inputmode="numeric" value="${bDueDay}">
+          </label>
+        </div>
       </div>
     </div>`;
 
@@ -835,6 +958,12 @@ M.scanResult = (mode, customImage = null) => {
   });
 };
 
+M.acts['scan-toggle-edit'] = () => {
+  const box = document.getElementById('scanEditFields');
+  if (!box) return;
+  box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+};
+
 M.acts['scan-confirm'] = el => {
   const mode = M.scan.mode, ar = M.s.lang === 'ar';
   const samp = M.BILL_SAMPLES[M.scan.billIdx || 0];
@@ -851,16 +980,6 @@ M.acts['scan-confirm'] = el => {
   const editedKind = document.getElementById('scEditKind')?.value;
   const editedDueDay = Number(M.toWesternDigits(String(document.getElementById('scEditDueDay')?.value || ''))) || 18;
 
-  if (isRealPhoto && !(editedAmount > 0)) {
-    const amtInput = document.getElementById('scEditAmount');
-    if (amtInput) {
-      amtInput.focus();
-      amtInput.style.borderColor = 'var(--crit)';
-    }
-    M.toast(ar ? 'يرجى إدخال مبلغ الورقة أولاً' : 'Please enter the amount first');
-    return;
-  }
-
   M.scan.customImage = null;
   M.scan.aiExtracted = null;
   el.closest('.sh-body').innerHTML = `<div class="empty">${M.successCheck()}<h4>${M.t(mode === 'receipt' ? 'addedR' : 'addedB')}</h4></div>`;
@@ -868,7 +987,7 @@ M.acts['scan-confirm'] = el => {
   const rAmount = editedAmount > 0 ? editedAmount : (aiExt?.amount ? Number(aiExt.amount) : 3450);
   const rMerchant = editedMerchant
     ? { ar: editedMerchant, en: editedMerchant }
-    : (aiExt?.merchant || { ar: 'أونو هايبر', en: 'Uno Hypermarket' });
+    : (aiExt?.merchant || { ar: 'فاتورة مشتريات', en: 'Purchase Receipt' });
   const rCat = editedCat || ((aiExt?.cat && M.CATS[aiExt.cat]) ? aiExt.cat : 'groceries');
   const rMember = editedMember || aiExt?.member || M.s.currentMemberId || 'abu';
 
@@ -922,7 +1041,7 @@ M.acts['scan-confirm'] = el => {
   } else {
     const sampIdx = M.scan.billIdx || 0;
     const isCur = aiExt?.isCurrentMonth !== undefined ? Boolean(aiExt.isCurrentMonth) : (isRealPhoto ? true : samp.isCurrentMonth);
-    const targetId = aiExt?.targetId || (isRealPhoto ? ('b_' + Date.now()) : samp.targetId);
+    const targetId = isRealPhoto ? ('b_' + Date.now()) : (aiExt?.targetId || samp.targetId);
     const bAmount = editedAmount > 0 ? editedAmount : (aiExt?.amount ? Number(aiExt.amount) : samp.amount);
     const bBiller = editedBiller
       ? { ar: editedBiller, en: editedBiller }
@@ -951,21 +1070,22 @@ M.acts['scan-confirm'] = el => {
         M.freshBillId = existing.id;
         if (M.api && isRealPhoto) M.api.updateBill(existing.id, existing).catch(() => {});
       } else {
-        const nid = targetId || ('b' + Date.now());
+        const nid = targetId || ('b_' + Date.now());
         const nb = { id: nid, n: bBiller, cat: aiExt?.cat || samp.cat || 'utilities', amount: bAmount, due: editedDueDay || aiExt?.dueDay || samp.dueDay || 18, paid: false, kind: bKind, scanned: true };
         M.s.bills.unshift(nb);
         M.freshBillId = nid;
         if (M.api && isRealPhoto) M.api.saveBill(nb).catch(() => {});
       }
     } else {
+      const schedId = isRealPhoto ? ('b_sched_' + Date.now()) : 'ins2';
       const sched = {
-        id: 'ins2', n: bBiller || { ar: 'تأمين أكسنت · SAA', en: 'Accent insurance · SAA' }, cat: 'car', amount: bAmount || 19800, kind: 'fixed',
+        id: schedId, n: bBiller || { ar: 'تأمين أكسنت · SAA', en: 'Accent insurance · SAA' }, cat: 'car', amount: bAmount || 19800, kind: 'fixed',
         dueStr: { ar: 'يستحق 8 ديسمبر', en: 'Due Dec 8' }, remStr: { ar: 'تذكير 1 ديسمبر', en: 'Reminder Dec 1' }, isScheduled: true
       };
-      const existingIdx = M.s.scheduled.findIndex(b => b.id === 'ins2');
+      const existingIdx = M.s.scheduled.findIndex(b => b.id === schedId);
       if (existingIdx >= 0) M.s.scheduled[existingIdx] = sched;
       else M.s.scheduled.push(sched);
-      M.freshBillId = 'ins2';
+      M.freshBillId = schedId;
     }
 
     if (M.api) {
@@ -1004,10 +1124,12 @@ M.acts['scan-confirm'] = el => {
 M.acts['scan-close'] = () => M.closeScanner();
 M.acts['scan-run'] = () => M.runScan();
 M.acts['scan-capture'] = async () => {
+  if (M.scan.busy) return;
   const photo = await M.capturePhoto('camera');
   if (photo) M.runScan(photo);
 };
 M.acts['scan-gallery'] = async () => {
+  if (M.scan.busy) return;
   const photo = await M.capturePhoto('photos');
   if (photo) M.runScan(photo);
 };
@@ -1071,174 +1193,9 @@ M.saveManual = f => {
   setTimeout(() => { M.freshBillId = null; }, 1600);
 };
 
-/* ── Native Apple Vision OCR & Smart Heuristic Parser Bridge ── */
-M._nativeVisionCallbacks = M._nativeVisionCallbacks || {};
-
-M.onNativeVisionResult = (callbackId, result) => {
-  if (M._nativeVisionCallbacks && M._nativeVisionCallbacks[callbackId]) {
-    M._nativeVisionCallbacks[callbackId](result);
-    delete M._nativeVisionCallbacks[callbackId];
-  }
-};
-
-M.recognizeTextNative = async (base64) => {
-  if (typeof window !== 'undefined' && window.webkit?.messageHandlers?.masrofiRecognizeText) {
-    return new Promise(resolve => {
-      const callbackId = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-      M._nativeVisionCallbacks = M._nativeVisionCallbacks || {};
-      const timer = setTimeout(() => {
-        delete M._nativeVisionCallbacks[callbackId];
-        resolve(null);
-      }, 5000);
-      M._nativeVisionCallbacks[callbackId] = res => {
-        clearTimeout(timer);
-        resolve(res);
-      };
-      try {
-        window.webkit.messageHandlers.masrofiRecognizeText.postMessage({
-          callbackId,
-          base64
-        });
-      } catch (e) {
-        clearTimeout(timer);
-        delete M._nativeVisionCallbacks[callbackId];
-        resolve(null);
-      }
-    });
-  }
-  return null;
-};
-
-/* High-accuracy Arabic / French / English heuristic OCR parser */
-M.parseReceiptFromOCR = (ocr) => {
-  if (!ocr || (!ocr.fullText && !Array.isArray(ocr.lines))) return null;
-  const lines = Array.isArray(ocr.lines) && ocr.lines.length
-    ? ocr.lines
-    : (ocr.fullText || '').split('\n').map(s => s.trim()).filter(Boolean);
-  const text = (ocr.fullText || lines.join('\n')).toLowerCase();
-
-  const normalizeNums = str => (str || '')
-    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-
-  // 1. Detect Mode: Bill vs Purchase Receipt
-  const billRegex = /فاتورة|facture|bill|sonelgaz|سونلغاز|steg|ade|eau|water|الماء|الكهرباء|gaz|gas|télécom|telecom|اتصالات|djezzy|جيزي|ooredoo|أوريدو|mobilis|موبيليس|stc|zain|internet|انترنت|assurance|تأمين|loyer|إيجار|échéance|استحقاق|quittance|redevance/i;
-  const isBill = billRegex.test(text);
-  const mode = isBill ? 'bill' : 'receipt';
-
-  // 2. Extract Merchant / Biller Name
-  let nameAr = '';
-  let nameEn = '';
-
-  if (/sonelgaz|سونلغاز/.test(text)) {
-    nameAr = 'سونلغاز (الكهرباء والغاز)';
-    nameEn = 'Sonelgaz';
-  } else if (/algérie télécom|اتصالات الجزائر|algerie telecom/.test(text)) {
-    nameAr = 'اتصالات الجزائر (الإنترنت)';
-    nameEn = 'Algérie Télécom';
-  } else if (/seaal|ade|الجزائرية للمياه|eau/.test(text)) {
-    nameAr = 'الجزائرية للمياه';
-    nameEn = 'ADE / Water';
-  } else if (/djezzy|جيزي/.test(text)) {
-    nameAr = 'جيزي (Djezzy)';
-    nameEn = 'Djezzy';
-  } else if (/ooredoo|أوريدو/.test(text)) {
-    nameAr = 'أوريدو (Ooredoo)';
-    nameEn = 'Ooredoo';
-  } else if (/mobilis|موبيليس/.test(text)) {
-    nameAr = 'موبيليس (Mobilis)';
-    nameEn = 'Mobilis';
-  } else if (/uno|أونو/.test(text)) {
-    nameAr = 'أونو هايبرماركت';
-    nameEn = 'Uno Hypermarket';
-  } else if (/carrefour|كارفور/.test(text)) {
-    nameAr = 'كارفور';
-    nameEn = 'Carrefour';
-  } else {
-    for (let i = 0; i < Math.min(lines.length, 5); i++) {
-      const candidate = lines[i].replace(/[^\p{L}\p{N}\s-]/gu, '').trim();
-      if (candidate.length >= 3 && candidate.length <= 40 && !/^\d+$/.test(candidate) && !/ticket|facture|recu|reçu|وصل|bienvenue|مرحبا|caisse/i.test(candidate)) {
-        nameAr = candidate;
-        nameEn = candidate;
-        break;
-      }
-    }
-  }
-
-  if (!nameAr) {
-    nameAr = isBill ? 'فاتورة خدمات' : 'وصل مشتريات';
-    nameEn = isBill ? 'Service Bill' : 'Store Receipt';
-  }
-
-  // 3. Extract Amounts
-  const amounts = [];
-  const totalKeywords = /total|المجموع|المبلغ|صافي|net\s*à\s*payer|montant|somme|dinar|da|dzd|ريال|درهم|جنيه/i;
-
-  for (const line of lines) {
-    const cleanLine = normalizeNums(line);
-    const hasTotal = totalKeywords.test(cleanLine);
-    const matches = cleanLine.match(/\b\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?\b|\b\d+(?:\.\d{1,2})?\b/g);
-    if (matches) {
-      for (const m of matches) {
-        const num = parseFloat(m.replace(/[,\s]/g, ''));
-        if (num >= 5 && num <= 500000) {
-          amounts.push({ val: num, isTotal: hasTotal });
-        }
-      }
-    }
-  }
-
-  let chosenAmount = 0;
-  const totalCandidates = amounts.filter(a => a.isTotal);
-  if (totalCandidates.length > 0) {
-    chosenAmount = totalCandidates[totalCandidates.length - 1].val;
-  } else if (amounts.length > 0) {
-    chosenAmount = Math.max(...amounts.map(a => a.val));
-  }
-
-  // 4. Extract Due Date / Day
-  let extractedDay = null;
-  const dateMatch = text.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/) || text.match(/(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})/);
-  if (dateMatch) {
-    if (dateMatch[1] && dateMatch[1].length <= 2) {
-      const d = parseInt(dateMatch[1], 10);
-      if (d >= 1 && d <= 31) extractedDay = d;
-    }
-  }
-
-  // 5. Return structured format
-  if (isBill) {
-    let cat = 'utilities';
-    if (/télécom|telecom|internet|djezzy|ooredoo|mobilis/i.test(text)) cat = 'net';
-    else if (/assurance|سيارة|car|auto/i.test(text)) cat = 'car';
-    else if (/loyer|إيجار|rent/i.test(text)) cat = 'home';
-    else if (/école|مدرسة|creche/i.test(text)) cat = 'family';
-
-    return {
-      mode: 'bill',
-      targetId: 'custom',
-      kind: 'var',
-      cat,
-      biller: { ar: nameAr, en: nameEn },
-      amount: chosenAmount || 3200,
-      dueDay: extractedDay || 18,
-      isCurrentMonth: true,
-      dueText: { ar: `يوم ${extractedDay || 18} من الشهر`, en: `Day ${extractedDay || 18} of month` },
-      detectedHikes: []
-    };
-  } else {
-    let cat = 'groceries';
-    if (/pharmacie|صيدلية|medecin|طبيب/i.test(text)) cat = 'health';
-    else if (/restaurant|مطعم|café|قهوة/i.test(text)) cat = 'dining';
-    else if (/station|وقود|essence|naftal|نفطال/i.test(text)) cat = 'car';
-
-    return {
-      mode: 'receipt',
-      merchant: { ar: nameAr, en: nameEn },
-      cat,
-      amount: chosenAmount || 1250,
-      day: extractedDay || (new Date()).getDate(),
-      items: [{ n: { ar: nameAr, en: nameEn }, q: 1, p: chosenAmount || 1250 }],
-      detectedHikes: []
-    };
-  }
+M.acts['scan-switch-detected'] = el => {
+  const nextM = el.dataset.m || 'receipt';
+  M.scan.mode = nextM;
+  if (M.scan.aiExtracted) M.scan.aiExtracted.mode = nextM;
+  M.scanResult(nextM, M.scan.customImage);
 };

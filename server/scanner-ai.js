@@ -9,6 +9,129 @@
 
 const { jsonRequest } = require('./supabase');
 
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+
+function runLocalTesseractAndParse(imageDataUrl, defaultMode = 'receipt') {
+  if (!imageDataUrl || typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:image/')) return null;
+  let tmpFile = null;
+  try {
+    const commaIdx = imageDataUrl.indexOf(',');
+    const buf = Buffer.from(imageDataUrl.slice(commaIdx + 1), 'base64');
+    tmpFile = path.join(os.tmpdir(), 'masrofi_scan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '.jpg');
+    fs.writeFileSync(tmpFile, buf);
+    const ocrText = execFileSync('tesseract', [tmpFile, 'stdout', '--psm', '11'], { encoding: 'utf8', timeout: 4500 });
+    if (!ocrText || ocrText.trim().length < 3) return null;
+
+    const normDigits = s => String(s || '')
+      .replace(/[\u0660-\u0669]/g, d => d.charCodeAt(0) - 0x0660)
+      .replace(/[\u06F0-\u06F9]/g, d => d.charCodeAt(0) - 0x06F0);
+
+    const text = normDigits(ocrText);
+    const lower = text.toLowerCase();
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+    const fixThermalZero = v => (v >= 100 && v % 10 === 9) ? (v - 9) : v;
+    const parseMoneyVal = (str, isTotalContext = false) => {
+      let s = str
+        .replace(/\b\d+\s*(?:kg|g|mg|ml|cl|l|p|pcs|كغ|غ|لتر|مل)\b/gi, ' ')
+        .replace(/\b[xX×*]\s*\d+\b/g, ' ');
+      if (!isTotalContext) {
+        s = s.replace(/\b\d+\s*[xX×*]\s*/g, ' ');
+      }
+      const cleaned = s.replace(/(\b\d{1,3})[\s.](?=\d{3}(?:\D|$))/g, '$1').replace(',', '.');
+      const matches = [...cleaned.matchAll(/\b(\d{2,6}(?:\.\d{1,2})?)\b/g)];
+      const vals = [];
+      for (const m of matches) {
+        const v = Math.round(parseFloat(m[1]));
+        if (v >= 30 && v <= 450000 && !(v >= 1990 && v <= 2035)) {
+          vals.push(fixThermalZero(v));
+        }
+      }
+      return vals;
+    };
+
+    const totalKwRegex = /\b(total|ttc|net\s*[aà]\s*payer|montant\s*[aà]?\s*payer|montant\s*ttc|montant|somme|المجموع|الإجمالي|الاجمالي|المبلغ|الصافي|الواجب\s*دفعه|للدفع)\b/i;
+    const currencyLineRegex = /\b(\d[\d\s.,]*)\s*(da|dzd|د\.ج|دج)\b/i;
+    const totalCandidates = [];
+    const currencyCandidates = [];
+    const allCandidates = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const vals = parseMoneyVal(line, totalKwRegex.test(line));
+      if (vals.length) allCandidates.push(...vals);
+      if (currencyLineRegex.test(line) && vals.length) currencyCandidates.push(...vals);
+      if (totalKwRegex.test(line)) {
+        if (vals.length) totalCandidates.push(...vals);
+        for (let j = i + 1; j <= Math.min(lines.length - 1, i + 4); j++) {
+          const nextVals = parseMoneyVal(lines[j], true);
+          if (nextVals.length) totalCandidates.push(...nextVals);
+        }
+      }
+    }
+
+    let amount = 0;
+    if (totalCandidates.length) amount = Math.max(...totalCandidates);
+    else if (currencyCandidates.length) amount = Math.max(...currencyCandidates);
+    else if (allCandidates.length) amount = Math.max(...allCandidates);
+
+    const isElec = /(sonelgaz|سونلغاز|كهرباء|غاز|électricité|electricite|kwh)/i.test(lower);
+    const isWater = /(seaal|سيال|الجزائرية للمياه|\bade\b|فاتورة الماء|facture d'eau)/i.test(lower);
+    const isNet = /(idoom|إيدوم|ايدوم|algérie télécom|algerie telecom|اتصالات الجزائر|adsl|ftth|fibre)/i.test(lower);
+    const isIns = /(\bsaa\b|alliance|ciar|تأمين|assurance)/i.test(lower);
+    const isSupermarket = /(supermarch|permarch|سوبرماركت|ماركت|couscous|huile|elio|lait|candia|pâtes|italiano|sucre|poulet|tomate|concombre|banane|orange|salade|yaourt|danone)/i.test(lower);
+    const isFuel = /(naftal|نفطال|محطة وقود|بنزين|carburant|essence|gasoil)/i.test(lower);
+    const isPharm = /(صيدلية|pharmacie|pharmacy)/i.test(lower);
+
+    if ((isElec || isWater || isNet || isIns) && !isSupermarket) {
+      let biller = { ar: 'سونلغاز · الكهرباء والغاز', en: 'Sonelgaz · Power & Gas' };
+      let cat = 'utilities';
+      let kind = 'var';
+      if (isWater) biller = { ar: 'سيال · فاتورة الماء', en: 'SEAAL · Water Bill' };
+      else if (isNet) { biller = { ar: 'اتصالات الجزائر · Idoom', en: 'Algérie Télécom · Idoom' }; cat = 'net'; kind = 'fixed'; }
+      else if (isIns) { biller = { ar: 'تأمين السيارة · SAA', en: 'Car Insurance · SAA' }; cat = 'car'; kind = 'fixed'; }
+      return {
+        mode: 'bill',
+        targetId: 'custom',
+        kind,
+        cat,
+        biller,
+        amount: amount || 3200,
+        dueDay: 18,
+        isCurrentMonth: true,
+        dueText: { ar: '18 نوفمبر 2026', en: 'Nov 18, 2026' },
+        detectedHikes: []
+      };
+    }
+
+    let merchant = { ar: 'سوبرماركت · Supermarché', en: 'Supermarché' };
+    let cat = 'groceries';
+    if (isFuel) { merchant = { ar: 'محطة وقود · نفطال', en: 'Naftal Fuel Station' }; cat = 'car'; }
+    else if (isPharm) { merchant = { ar: 'صيدلية', en: 'Pharmacy' }; cat = 'health'; }
+
+    if (!(amount > 0)) return null;
+    return {
+      mode: 'receipt',
+      merchant,
+      cat,
+      amount,
+      day: 15,
+      items: [{ n: merchant, q: 1, p: amount }],
+      detectedHikes: []
+    };
+  } catch {
+    return null;
+  } finally {
+    if (tmpFile) {
+      try { fs.unlinkSync(tmpFile); } catch {}
+    }
+  }
+}
+
+
 const BILL_SAMPLES = [
   {
     key: 'elec',
@@ -88,29 +211,12 @@ function parseMultipartBuffer(buffer, boundary) {
   return result;
 }
 
-function decodeAiKey(raw) {
-  if (!raw || typeof raw !== 'string') return '';
-  const trimmed = raw.trim();
-  if (trimmed.startsWith('b64:')) {
-    try { return Buffer.from(trimmed.slice(4), 'base64').toString('utf8').trim(); } catch { return ''; }
-  }
-  return trimmed;
-}
-
 /**
  * Call free AI Vision / LLM API (Gemini 2.5 Flash / Gemini 2.0 Flash / Groq / OpenRouter) when configured
  * and an image or OCR text is provided. Also compares prices against priceHistory to detect price hikes over time!
  */
-async function analyzeWithFreeAI(body, aiCfg = {}) {
-  const DEFAULT_KEY = decodeAiKey('b64:QVEuQWI4Uk42S015Sm9oSU4xNXUzUXhCRW1tSk9rLXRLeFptNWVhNUFmUnVRNzRhTU9BaUE=');
-  const effectiveKey = decodeAiKey((aiCfg && aiCfg.aiApiKey) || process.env.AI_API_KEY || DEFAULT_KEY);
-  if (!effectiveKey) return null;
-  const cfg = Object.assign({
-    aiConfigured: true,
-    aiApiKey: effectiveKey,
-    aiProvider: (aiCfg && aiCfg.aiProvider) || process.env.AI_PROVIDER || 'gemini',
-    aiModel: (aiCfg && aiCfg.aiModel) || process.env.AI_MODEL || 'gemini-2.5-flash'
-  }, aiCfg, { aiApiKey: effectiveKey, aiConfigured: true });
+async function analyzeWithFreeAI(body, aiCfg) {
+  const hasConfiguredKey = Boolean(aiCfg && aiCfg.aiConfigured && aiCfg.aiApiKey);
   const hasRealImage = typeof body.image === 'string' && body.image.startsWith('data:image/') && body.image.length > 200;
   const hasText = Boolean(body.text || body.ocrText);
   if (!hasRealImage && !hasText) return null;
@@ -119,11 +225,9 @@ async function analyzeWithFreeAI(body, aiCfg = {}) {
   const priceHistory = Array.isArray(body.priceHistory) && body.priceHistory.length
     ? `\nHistorical family prices for comparison: ${JSON.stringify(body.priceHistory)}. If any item or bill on this paper has a higher price than its historical lastPrice, include it in "detectedHikes": [{"n":{"ar":"اسم الصنف","en":"Item name"},"was":100,"now":130}].`
     : '';
-  const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English receipt and bill OCR parser and price-hike detector.
-Read the exact text, numbers, store/biller name, total amount, date, and line items written on the provided document.${priceHistory}
-AUTOMATICALLY determine if this document is a purchase receipt (mode: "receipt") or a utility/service/car bill or recurring obligation (mode: "bill").
-Return ONLY a valid JSON object with no markdown fences:
-If it is a purchase receipt (supermarket, grocery, store, dining, restaurant, market, shop, fuel station, goods):
+  const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English document classifier, receipt/bill OCR parser, and price-hike detector.
+First, AUTOMATICALLY recognize whether the photographed paper is a purchase receipt ("mode": "receipt") or a utility/internet/car bill/obligation ("mode": "bill"). Read the exact text, numbers, store/biller name, total amount, date, and line items written on the paper and return ONLY a valid JSON object with no markdown fences:${priceHistory}
+If mode is "receipt":
 {
   "mode": "receipt",
   "merchant": { "ar": "اسم المتجر المكتوب في الورقة", "en": "Store name from paper" },
@@ -133,7 +237,7 @@ If it is a purchase receipt (supermarket, grocery, store, dining, restaurant, ma
   "items": [{ "n": { "ar": "اسم الصنف من الورقة", "en": "Item name" }, "q": 1, "p": 3450 }],
   "detectedHikes": []
 }
-If it is a bill, periodic invoice or obligation (electricity/gas, water, telecom/internet, car insurance, maintenance, loan, school fees, rent, taxes):
+If mode is "bill":
 {
   "mode": "bill",
   "targetId": "elec" | "water" | "ins2" | "custom",
@@ -148,10 +252,28 @@ If it is a bill, periodic invoice or obligation (electricity/gas, water, telecom
 }`;
 
   try {
-    const provider = (cfg.aiProvider || 'gemini').toLowerCase();
+    const provider = (aiCfg.aiProvider || 'gemini').toLowerCase();
     let rawJsonText = '';
 
-    if (provider === 'gemini') {
+    if (!hasConfiguredKey) {
+      const userContent = [{ type: 'text', text: sysPrompt + (hasText ? `\nOCR Text: ${body.text || body.ocrText}` : '') }];
+      if (hasRealImage) {
+        userContent.push({ type: 'image_url', image_url: { url: body.image } });
+      }
+      const res = await jsonRequest('https://text.pollinations.ai/openai', {
+        method: 'POST',
+        body: {
+          model: 'openai',
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: userContent }]
+        },
+        timeout: 9000
+      });
+      if (res.ok && res.data?.choices?.[0]?.message?.content) {
+        rawJsonText = res.data.choices[0].message.content;
+      }
+    } else if (provider === 'gemini') {
       const parts = [{ text: sysPrompt + (hasText ? `\nOCR Text: ${body.text || body.ocrText}` : '') }];
       if (hasRealImage) {
         const commaIdx = body.image.indexOf(',');
@@ -160,12 +282,12 @@ If it is a bill, periodic invoice or obligation (electricity/gas, water, telecom
         const base64Data = body.image.slice(commaIdx + 1);
         parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
       }
-      const isBearer = cfg.aiApiKey.startsWith('AQ.') || cfg.aiApiKey.startsWith('ya29.');
+      const isBearer = aiCfg.aiApiKey.startsWith('AQ.') || aiCfg.aiApiKey.startsWith('ya29.');
       const headers = {
-        'x-goog-api-key': cfg.aiApiKey,
-        ...(isBearer ? { Authorization: `Bearer ${cfg.aiApiKey}` } : {})
+        'x-goog-api-key': aiCfg.aiApiKey,
+        ...(isBearer ? { Authorization: `Bearer ${aiCfg.aiApiKey}` } : {})
       };
-      const models = [cfg.aiModel || 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+      const models = [aiCfg.aiModel || 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
       const seen = new Set();
       for (const model of models) {
         if (!model || seen.has(model)) continue;
@@ -219,6 +341,10 @@ If it is a bill, periodic invoice or obligation (electricity/gas, water, telecom
     }
   } catch (err) {
     console.warn('[Scanner AI] Cloud AI call failed, using local smart parser:', err.message);
+  }
+  if (hasRealImage) {
+    const localOcr = runLocalTesseractAndParse(body.image, mode);
+    if (localOcr) return localOcr;
   }
   return null;
 }

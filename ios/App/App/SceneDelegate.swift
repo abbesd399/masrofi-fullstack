@@ -1,8 +1,8 @@
 import UIKit
 import WebKit
 import AVFoundation
-import UserNotifications
 import Vision
+import UserNotifications
 import Capacitor
 
 class MasrofiViewController: CAPBridgeViewController, WKScriptMessageHandler {
@@ -13,7 +13,7 @@ class MasrofiViewController: CAPBridgeViewController, WKScriptMessageHandler {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.userContentController.add(self, name: "masrofiNotify")
         config.userContentController.add(self, name: "masrofiScheduleBg")
-        config.userContentController.add(self, name: "masrofiRecognizeText")
+        config.userContentController.add(self, name: "masrofiOCR")
         return config
     }
 
@@ -43,7 +43,7 @@ class MasrofiViewController: CAPBridgeViewController, WKScriptMessageHandler {
         }
     }
 
-    // Native iOS Notification Bridge — delivers notifications even when the user is OUTSIDE the app or on the Lock Screen
+    // Native iOS Notification + Apple Vision OCR Bridge
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let dict = message.body as? [String: Any] else { return }
 
@@ -70,49 +70,94 @@ class MasrofiViewController: CAPBridgeViewController, WKScriptMessageHandler {
             content.body = body
             content.sound = .default
 
-            // Schedule recurring monthly/daily check reminder when outside the app
             var dateComponents = DateComponents()
             dateComponents.hour = 10
             dateComponents.minute = 0
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
             let req = UNNotificationRequest(identifier: "masrofi_monthly_ai_check", content: content, trigger: trigger)
             UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
-        } else if message.name == "masrofiRecognizeText" {
-            guard let base64Str = dict["base64"] as? String,
-                  let callbackId = dict["callbackId"] as? String else { return }
+        } else if message.name == "masrofiOCR" {
+            let reqId = (dict["reqId"] as? String) ?? ""
+            let dataUrl = (dict["image"] as? String) ?? ""
+            guard !reqId.isEmpty, !dataUrl.isEmpty else { return }
+            performNativeVisionOCR(reqId: reqId, dataUrl: dataUrl)
+        }
+    }
 
-            let cleanBase64 = base64Str.replacingOccurrences(of: "data:image/jpeg;base64,", with: "")
-                                       .replacingOccurrences(of: "data:image/png;base64,", with: "")
-            guard let imageData = Data(base64Encoded: cleanBase64),
-                  let uiImage = UIImage(data: imageData),
+    private func performNativeVisionOCR(reqId: String, dataUrl: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let base64Part: String
+            if let commaRange = dataUrl.range(of: ",") {
+                base64Part = String(dataUrl[commaRange.upperBound...])
+            } else {
+                base64Part = dataUrl
+            }
+            guard let imgData = Data(base64Encoded: base64Part, options: .ignoreUnknownCharacters),
+                  let uiImage = UIImage(data: imgData),
                   let cgImage = uiImage.cgImage else {
+                self?.sendOCRResult(reqId: reqId, text: "")
                 return
             }
 
-            let request = VNRecognizeTextRequest { (req, err) in
-                guard let observations = req.results as? [VNRecognizedTextObservation] else { return }
-                var recognizedStrings: [String] = []
+            let request = VNRecognizeTextRequest { [weak self] req, _ in
+                let observations = (req.results as? [VNRecognizedTextObservation]) ?? []
+                struct BoxItem {
+                    let text: String
+                    let midY: CGFloat
+                    let minX: CGFloat
+                }
+                var items: [BoxItem] = []
                 for obs in observations {
-                    if let candidate = obs.topCandidates(1).first {
-                        recognizedStrings.append(candidate.string)
+                    if let cand = obs.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines), !cand.isEmpty {
+                        let bb = obs.boundingBox
+                        items.append(BoxItem(text: cand, midY: bb.midY, minX: bb.minX))
                     }
                 }
-                let fullText = recognizedStrings.joined(separator: "\n")
-                DispatchQueue.main.async {
-                    let jsonData = (try? JSONSerialization.data(withJSONObject: recognizedStrings)) ?? Data()
-                    let jsonArr = String(data: jsonData, encoding: .utf8) ?? "[]"
-                    let js = "window.M && window.M.onNativeVisionResult && window.M.onNativeVisionResult('\(callbackId)', { fullText: \(fullText.debugDescription), lines: \(jsonArr) });"
-                    self.webView?.evaluateJavaScript(js, completionHandler: nil)
+                // Sort top-to-bottom (in Vision coordinates, y=1 is top and y=0 is bottom)
+                items.sort { $0.midY > $1.midY }
+
+                // Group items on the same horizontal line (within 2.6% vertical tolerance) and sort left-to-right
+                var rows: [[BoxItem]] = []
+                for item in items {
+                    if var lastRow = rows.last, let firstInRow = lastRow.first, abs(firstInRow.midY - item.midY) < 0.026 {
+                        lastRow.append(item)
+                        rows[rows.count - 1] = lastRow
+                    } else {
+                        rows.append([item])
+                    }
                 }
+                let lines: [String] = rows.map { row in
+                    let sortedRow = row.sorted { $0.minX < $1.minX }
+                    return sortedRow.map { $0.text }.joined(separator: "   ")
+                }
+                let fullText = lines.joined(separator: "\n")
+                self?.sendOCRResult(reqId: reqId, text: fullText)
             }
             request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["ar-SA", "fr-FR", "en-US"]
             request.usesLanguageCorrection = true
+            if #available(iOS 16.0, *) {
+                request.automaticallyDetectsLanguage = true
+            }
+            request.recognitionLanguages = ["fr-FR", "ar-SA", "en-US"]
 
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            DispatchQueue.global(qos: .userInitiated).async {
-                try? handler.perform([request])
+            do {
+                try handler.perform([request])
+            } catch {
+                self?.sendOCRResult(reqId: reqId, text: "")
             }
+        }
+    }
+
+    private func sendOCRResult(reqId: String, text: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let wv = self?.webView else { return }
+            let encodedReq = (try? JSONSerialization.data(withJSONObject: [reqId]))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
+            let encodedTxt = (try? JSONSerialization.data(withJSONObject: [text]))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
+            let js = "if(window.__masrofiOCRCallback){window.__masrofiOCRCallback((\(encodedReq))[0],(\(encodedTxt))[0]);}"
+            wv.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 
@@ -132,8 +177,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
 
-        window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = MasrofiViewController()
+        if window == nil {
+            window = UIWindow(windowScene: windowScene)
+        }
+        if !(window?.rootViewController is MasrofiViewController) {
+            window?.rootViewController = MasrofiViewController()
+        }
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)

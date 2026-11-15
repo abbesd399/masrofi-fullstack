@@ -2,7 +2,6 @@
 *{
   box-sizing:border-box;margin:0;padding:0;
   -webkit-tap-highlight-color:transparent;
-  -webkit-touch-callout:none;
 }
 html,body{
   height:100%;
@@ -10,12 +9,12 @@ html,body{
   text-size-adjust:100%;
   overscroll-behavior:none;
 }
-input, textarea, select, label{
-  user-select: text !important;
-  -webkit-user-select: text !important;
-  -webkit-touch-callout: default !important;
-  pointer-events: auto !important;
-  font-size: 16px !important; /* Strict iOS WebKit rule: >= 16px prevents Safari/WebView auto-zoom on focus! */
+input,textarea,select,label{
+  user-select:text !important;
+  -webkit-user-select:text !important;
+  -webkit-touch-callout:default !important;
+  pointer-events:auto !important;
+  font-size:16px !important; /* Strict iOS WebKit rule: >= 16px prevents Safari/WebView auto-zoom on focus! */
 }
 body{
   font-family:Inter,system-ui,sans-serif;color:#E6EAF2;overflow:hidden;position:relative;
@@ -185,16 +184,16 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;user-s
     display:none !important;
   }
   .appbar{
-    padding-top:max(20px, calc(env(safe-area-inset-top, 16px) + 12px)) !important;
+    padding-top:max(54px, calc(env(safe-area-inset-top, 44px) + 12px)) !important;
   }
   .onboarding{
     padding-top:max(58px, calc(env(safe-area-inset-top, 48px) + 16px)) !important;
   }
   .notif{
-    top:max(18px, calc(env(safe-area-inset-top, 16px) + 10px)) !important;
+    top:max(56px, calc(env(safe-area-inset-top, 48px) + 10px)) !important;
   }
   .sc-top{
-    padding-top:max(20px, calc(env(safe-area-inset-top, 16px) + 12px)) !important;
+    padding-top:max(54px, calc(env(safe-area-inset-top, 44px) + 12px)) !important;
   }
   .nav{
     height:calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)) !important;
@@ -248,7 +247,7 @@ body.native-app .home-ind{
 }
 body.is-mobile .appbar,
 body.native-app .appbar{
-  padding-top:max(20px, calc(env(safe-area-inset-top, 16px) + 12px)) !important;
+  padding-top:max(54px, calc(env(safe-area-inset-top, 44px) + 12px)) !important;
 }
 body.is-mobile .onboarding,
 body.native-app .onboarding{
@@ -256,11 +255,11 @@ body.native-app .onboarding{
 }
 body.is-mobile .notif,
 body.native-app .notif{
-  top:max(18px, calc(env(safe-area-inset-top, 16px) + 10px)) !important;
+  top:max(56px, calc(env(safe-area-inset-top, 48px) + 10px)) !important;
 }
 body.is-mobile .sc-top,
 body.native-app .sc-top{
-  padding-top:max(20px, calc(env(safe-area-inset-top, 16px) + 12px)) !important;
+  padding-top:max(54px, calc(env(safe-area-inset-top, 44px) + 12px)) !important;
 }
 body.is-mobile .nav,
 body.native-app .nav{

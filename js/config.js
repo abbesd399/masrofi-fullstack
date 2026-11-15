@@ -13,6 +13,6 @@ M.CONFIG = {
   // 2. Shared Family AI Key (مفتاح ذكاء اصطناعي مجاني واحد يعمل تلقائياً مع جميع أفراد العائلة)
   // المزودات المدعومة: 'gemini' (Google AI Studio - gemini-2.5-flash) | 'groq' | 'openrouter'
   AI_PROVIDER: 'gemini',
-  AI_MODEL: 'gemini-2.5-flash',
+  AI_MODEL: 'gemini-3.8-flash',
   AI_API_KEY: 'b64:QVEuQWI4Uk42S015Sm9oSU4xNXUzUXhCRW1tSk9rLXRLeFptNWVhNUFmUnVRNzRhTU9BaUE='
 };

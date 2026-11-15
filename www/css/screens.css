@@ -269,10 +269,10 @@
 .viewfinder{position:relative;flex:1;margin:12px 18px 0;border-radius:22px;overflow:hidden;
   background:radial-gradient(ellipse at 50% 40%,#16202C,#07090D 75%);border:1px solid rgba(255,255,255,.14)}
 #camVideo{
-  position:absolute;inset:0;width:100% !important;height:100% !important;object-fit:cover !important;z-index:1;
-  background:#07090D;display:none;
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;
+  background:#07090D;display:none;transition:transform .26s cubic-bezier(.2,.9,.3,1);
 }
-#camVideo.on{display:block !important}
+#camVideo.on{display:block}
 .vf-captured{
   position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;
   display:none;
@@ -284,7 +284,7 @@
   mask-image:linear-gradient(transparent,#000 60%);-webkit-mask-image:linear-gradient(transparent,#000 60%);animation:gridMove 6s linear infinite;z-index:0}
 @keyframes gridMove{to{background-position:0 34px,0 0}}
 .vf-noise{position:absolute;inset:0;opacity:.1;mix-blend-mode:overlay;z-index:2;pointer-events:none}
-.vf-frame{position:absolute;inset:24px 20px 72px;z-index:3;pointer-events:none}
+.vf-frame{position:absolute;inset:24px 20px 104px;z-index:3;pointer-events:none}
 .vf-frame i{position:absolute;width:32px;height:32px;border:3px solid #2DD4BF;border-radius:4px;transition:border-color .3s}
 .vf-frame i:nth-child(1){top:0;left:0;border-right:0;border-bottom:0;border-top-left-radius:14px}
 .vf-frame i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0;border-top-right-radius:14px}
@@ -500,23 +500,77 @@
 }
 .sc-flip-pill:active{transform:scale(.94)}
 
-/* True Native Camera Zoom Dial (0.5 · 1x · 2.5) with iOS Apple Gold Accent */
+
+/* Native Phone Camera Bottom Zoom Dial (0.5 · 1x · 2.5) */
 .cam-zoom-dial{
-  position:absolute;bottom:16px !important;left:50%;transform:translateX(-50%);z-index:7;
-  display:inline-flex !important;flex-direction:row !important;direction:ltr !important;align-items:center;justify-content:center;gap:8px;
-  background:rgba(15,23,42,.62);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-  padding:3px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.18);
-  box-shadow:0 6px 18px rgba(0,0,0,.35);
+  position:absolute;bottom:56px;left:50%;transform:translateX(-50%);z-index:6;
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  padding:4px 6px;border-radius:999px;direction:ltr;
+  background:rgba(15,18,24,.65);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,.12);transition:opacity .25s ease;
 }
 .cam-z-btn{
-  width:32px;height:32px;border-radius:50%;border:none;cursor:pointer;
-  background:transparent;color:rgba(255,255,255,.82);font-size:12px;font-weight:700;
-  display:grid;place-items:center;transition:all .22s cubic-bezier(0.34, 1.56, 0.64, 1);
-  padding:0;letter-spacing:-.2px;direction:ltr !important;
+  width:34px;height:34px;border-radius:50%;
+  font:700 12px/1 Inter,-apple-system,BlinkMacSystemFont,sans-serif;
+  color:#FFFFFF;background:transparent;border:0;
+  display:grid;place-items:center;letter-spacing:-.02em;
+  transition:transform .22s cubic-bezier(.2,.9,.3,1.2),background .2s,color .2s;
+}
+.cam-z-btn.on{
+  width:38px;height:38px;
+  background:rgba(36,38,44,.96);
+  color:#FFD60A;
+  font-size:13px;font-weight:800;
+  box-shadow:0 2px 8px rgba(0,0,0,.48),inset 0 0 0 1px rgba(255,255,255,.14);
 }
 .cam-z-btn:active{transform:scale(.9)}
+
+
+.cam-bar,#camSelectorBar,.vf-hint,#vfHint,.sc-modes{display:none !important}
+.vf-frame{position:absolute;inset:22px 20px 76px !important;z-index:3;pointer-events:none}
+.cam-zoom-dial{
+  position:absolute !important;bottom:16px !important;left:50% !important;transform:translateX(-50%) !important;z-index:8 !important;
+  display:inline-flex !important;flex-direction:row !important;align-items:center !important;justify-content:center !important;gap:6px !important;
+  padding:4px 7px !important;border-radius:999px !important;direction:ltr !important;unicode-bidi:isolate !important;
+  background:rgba(15,18,24,.72) !important;backdrop-filter:blur(14px) !important;-webkit-backdrop-filter:blur(14px) !important;
+  border:1px solid rgba(255,255,255,.14) !important;transition:opacity .25s ease !important;
+}
+.cam-z-btn{
+  width:34px !important;height:34px !important;border-radius:50% !important;
+  font:700 12px/1 Inter,-apple-system,BlinkMacSystemFont,sans-serif !important;
+  color:#FFFFFF !important;background:transparent !important;border:0 !important;
+  display:grid !important;place-items:center !important;letter-spacing:-.02em !important;
+  direction:ltr !important;transition:transform .22s cubic-bezier(.2,.9,.3,1.2),background .2s,color .2s !important;
+}
 .cam-z-btn.on{
-  background:rgba(255,214,10,.22);color:#FFD60A;
-  border:1.5px solid #FFD60A;transform:scale(1.1);
-  box-shadow:0 0 12px rgba(255,214,10,.4);font-weight:800;
+  width:38px !important;height:38px !important;
+  background:rgba(36,38,44,.96) !important;
+  color:#FFD60A !important;
+  font-size:13px !important;font-weight:800 !important;
+  box-shadow:0 2px 8px rgba(0,0,0,.48),inset 0 0 0 1px rgba(255,255,255,.15) !important;
+}
+.cam-z-btn:active{transform:scale(.9) !important}
+
+#camVideo {
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: cover !important;
+  object-position: center center !important;
+  background: #07090D !important;
+  z-index: 1 !important;
+}
+.vf-captured, .vf-captured img {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
 }

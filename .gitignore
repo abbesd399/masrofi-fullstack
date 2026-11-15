@@ -43,12 +43,7 @@ test/*.png
 npm-debug.log*
 .env
 
-# Nested clones and working dirs
+# Nested clone
 masrofi-fullstack/
-masrofi-fullstack_*/
-
-# Local native templates
-ios/App/binary/
-ios/App/native_template/
 
 *.ipa
