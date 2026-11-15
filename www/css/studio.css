@@ -188,7 +188,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;user-s
     padding-top:max(20px, calc(env(safe-area-inset-top, 16px) + 12px)) !important;
   }
   .onboarding{
-    padding-top:max(24px, calc(env(safe-area-inset-top, 20px) + 16px)) !important;
+    padding-top:max(58px, calc(env(safe-area-inset-top, 48px) + 16px)) !important;
   }
   .notif{
     top:max(18px, calc(env(safe-area-inset-top, 16px) + 10px)) !important;
@@ -252,7 +252,7 @@ body.native-app .appbar{
 }
 body.is-mobile .onboarding,
 body.native-app .onboarding{
-  padding-top:max(24px, calc(env(safe-area-inset-top, 20px) + 16px)) !important;
+  padding-top:max(58px, calc(env(safe-area-inset-top, 48px) + 16px)) !important;
 }
 body.is-mobile .notif,
 body.native-app .notif{

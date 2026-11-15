@@ -555,6 +555,27 @@ if (typeof document !== 'undefined') {
   document.addEventListener('dblclick', ev => ev.preventDefault(), { passive: false });
 }
 
+/* ── Name Input Guard: Accepts letters & spaces only, strictly blocks all digits ── */
+M.isNameField = el => {
+  if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return false;
+  const type = (el.type || '').toLowerCase();
+  if (type === 'file' || type === 'hidden' || type === 'range' || type === 'date' || type === 'checkbox' || type === 'number') return false;
+
+  const id = (el.id || '').toLowerCase();
+  const name = (el.name || '').toLowerCase();
+
+  const nameKeys = ['username', 'obusername', 'mname', 'familyname', 'membername'];
+  if (nameKeys.some(k => id === k || id.includes(k) || name === k || name.includes(k))) {
+    return true;
+  }
+  return false;
+};
+
+M.sanitizeNameValue = val => {
+  if (val == null) return '';
+  return String(val).replace(/[\d\u0660-\u0669\u06F0-\u06F9]/g, '');
+};
+
 /* ── Strict Numeric Input Guard: Blocks non-numeric chars & converts Eastern digits in real-time ── */
 M.getNumericMode = el => {
   if (!el || el.tagName !== 'INPUT') return null;
@@ -562,21 +583,18 @@ M.getNumericMode = el => {
   const type = (el.type || '').toLowerCase();
   if (type === 'file' || type === 'hidden' || type === 'range' || type === 'date' || type === 'checkbox') return null;
 
-  if (im === 'numeric') {
-    const name = (el.name || el.id || '').toLowerCase();
-    if (['amount', 'price', 'fuel', 'salary', 'target', 'saved', 'monthly', 'amt', 'p'].some(k => name === k || name.includes(k))) {
-      return 'decimal';
-    }
-    return 'integer';
-  }
-  if (im === 'decimal') return 'decimal';
-  if (type === 'number') return 'decimal';
+  const name = (el.name || '').toLowerCase();
+  const id = (el.id || '').toLowerCase();
 
-  const name = (el.name || el.id || '').toLowerCase();
-  const intNames = ['payday', 'dueday', 'odo', 'kmday', 'nextoil', 'carodo', 'quantity', 'q'];
-  if (intNames.some(k => name === k || name.includes(k))) return 'integer';
-  const decNames = ['salary', 'sal', 'amount', 'amt', 'price', 'fuel', 'target', 'saved', 'gtarget', 'gsaved', 'p', 'a'];
-  if (decNames.some(k => name === k || name.includes(k))) return 'decimal';
+  const intNames = ['payday', 'dueday', 'odo', 'kmday', 'nextoil', 'carodo', 'quantity', 'q', 'sceditdueday'];
+  if (intNames.some(k => name === k || id === k || name.includes(k) || id.includes(k))) return 'integer';
+
+  const decNames = ['salary', 'sal', 'amount', 'amt', 'price', 'fuel', 'fuelprice', 'target', 'saved', 'gtarget', 'gsaved', 'p', 'a', 'obsalary', 'sceditamount', 'cartprice'];
+  if (decNames.some(k => name === k || id === k || name.includes(k) || id.includes(k))) return 'decimal';
+
+  if (im === 'numeric') return 'integer';
+  if (im === 'decimal' || type === 'number') return 'decimal';
+
   return null;
 };
 
@@ -608,8 +626,18 @@ window.addEventListener('keydown', ev => {
     return;
   }
 
-  // Strict keyboard guard for numeric / decimal inputs
   const el = ev.target;
+  // 1. Guard for Name fields (accepts letters and spaces only, strictly blocks digits)
+  if (M.isNameField && M.isNameField(el)) {
+    if (ev.key && ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+      if (/[\d\u0660-\u0669\u06F0-\u06F9]/.test(ev.key)) {
+        ev.preventDefault();
+        return;
+      }
+    }
+  }
+
+  // 2. Strict keyboard guard for numeric / decimal inputs
   const mode = M.getNumericMode ? M.getNumericMode(el) : null;
   if (!mode) return;
 
@@ -642,6 +670,15 @@ window.addEventListener('keydown', ev => {
 // Intercept beforeinput (for virtual keyboards & autofill)
 window.addEventListener('beforeinput', ev => {
   const el = ev.target;
+  // Name fields: block digits in beforeinput
+  if (M.isNameField && M.isNameField(el) && ev.data) {
+    if (/[\d\u0660-\u0669\u06F0-\u06F9]/.test(ev.data)) {
+      ev.preventDefault();
+      return;
+    }
+  }
+
+  // Numeric fields: block non-numeric characters
   const mode = M.getNumericMode ? M.getNumericMode(el) : null;
   if (!mode || !ev.data) return;
 
@@ -659,6 +696,25 @@ window.addEventListener('beforeinput', ev => {
 // Real-time input sanitizer on phone & document
 phone.addEventListener('input', ev => {
   const el = ev.target;
+  // Name fields: strip digits in real-time
+  if (M.isNameField && M.isNameField(el) && typeof el.value === 'string') {
+    const original = el.value;
+    const sanitized = M.sanitizeNameValue(original);
+    if (original !== sanitized) {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      el.value = sanitized;
+      if (typeof start === 'number') {
+        try {
+          const diff = original.length - sanitized.length;
+          el.setSelectionRange(Math.max(0, start - diff), Math.max(0, end - diff));
+        } catch {}
+      }
+    }
+    return;
+  }
+
+  // Numeric fields: sanitize digits in real-time
   const mode = M.getNumericMode ? M.getNumericMode(el) : null;
   if (mode && typeof el.value === 'string') {
     const original = el.value;

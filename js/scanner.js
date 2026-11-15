@@ -121,23 +121,12 @@ M.refreshCameraList = async () => {
   } catch {
     M.scan.cameras = defaultCams;
   }
-  M.renderCameraBar();
+  if (typeof M.renderZoomDial === 'function') M.renderZoomDial();
   return M.scan.cameras;
 };
 
 M.renderCameraBar = () => {
-  const bar = document.getElementById('camSelectorBar');
-  if (!bar) return;
-  const cams = M.scan.cameras?.length ? M.scan.cameras : [
-    { id: 'env_main', deviceId: null, facing: 'environment', label: { ar: 'الكاميرا الخلفية', en: 'Back Camera' } },
-    { id: 'user_front', deviceId: null, facing: 'user', label: { ar: 'الكاميرا الأمامية', en: 'Front Camera' } }
-  ];
-  bar.innerHTML = cams.map((c, idx) => {
-    const isOn = M.scan.deviceId ? (c.deviceId === M.scan.deviceId) : (c.facing === M.scan.facing && idx === M.scan.cameraIdx);
-    return `<button type="button" class="cam-chip ${isOn ? 'on' : ''}" data-act="scan-pick-cam" data-idx="${idx}">
-      ${M.ico('camera', 12, 2.2)} <span>${M.L(c.label)}</span>
-    </button>`;
-  }).join('');
+  if (typeof M.renderZoomDial === 'function') M.renderZoomDial();
 };
 
 /* ── In-App Live Camera Stream (opens camera inside .viewfinder without leaving the app!) ── */
@@ -372,8 +361,8 @@ M.openScanner = (mode = 'receipt', auto = false) => {
       <button type="button" class="sc-x" data-act="scan-close" aria-label="close">${M.ico('close', 18, 2.4)}</button>
       <h3>${M.ico('spark', 15, 2)} ${M.t('scan')}</h3>
       <div style="display:flex;gap:6px;align-items:center">
-        <button type="button" class="sc-flip-pill" data-act="scan-flip" aria-label="switch camera" title="${ar ? 'التبديل بين كاميرات الهاتف' : 'Switch phone cameras'}">
-          ${M.ico('flip', 15)} <span>${ar ? 'تغيير الكاميرا' : 'Switch Cam'}</span>
+        <button type="button" class="sc-x" data-act="scan-flip" aria-label="switch camera" title="${ar ? 'التبديل بين كاميرات الهاتف' : 'Switch phone cameras'}">
+          ${M.ico('flip', 18)}
         </button>
         <button type="button" class="sc-x" data-act="scan-flash" aria-label="flash">${M.ico('flash', 18)}</button>
       </div>
@@ -382,15 +371,9 @@ M.openScanner = (mode = 'receipt', auto = false) => {
       <div class="vf-grid"></div><div class="vf-noise"></div>
       <video id="camVideo" autoplay playsinline muted webkit-playsinline></video>
       <div class="vf-captured" id="vfCaptured"></div>
-      <div class="cam-bar" id="camSelectorBar"></div>
       <div class="vf-frame" id="vfFrame"><i></i><i></i><i></i><i></i></div>
       <div class="laser" id="laser"></div>
-      <div class="cam-zoom-dial" id="camZoomDial">
-        <button type="button" class="cam-z-btn" data-act="scan-zoom" data-zoom="0.5">0.5</button>
-        <button type="button" class="cam-z-btn on" data-act="scan-zoom" data-zoom="1">1x</button>
-        <button type="button" class="cam-z-btn" data-act="scan-zoom" data-zoom="2.5">2.5</button>
-      </div>
-      <div class="vf-hint" id="vfHint">${ar ? 'وجّه الكاميرا نحو أي إيصال أو فاتورة — سيتعرف عليها الذكاء الاصطناعي تلقائياً' : 'Point camera at any receipt or bill — AI detects it automatically'}</div>
+      <div class="cam-zoom-dial" id="camZoomDial"></div>
       <div class="ai-steps" id="aiSteps"></div>
       <div class="flashfx" id="flashfx"></div>
     </div>
@@ -404,6 +387,7 @@ M.openScanner = (mode = 'receipt', auto = false) => {
   requestAnimationFrame(() => {
     if (!M.scan.open) return;
     sc.classList.add('on');
+    M.renderZoomDial();
     if (!auto) {
       M.startCameraStream();
     }
@@ -425,7 +409,7 @@ M.acts['scan-flip'] = async el => {
   M.scan.deviceId = chosen.deviceId || null;
   M.scan.facing = chosen.facing || (M.scan.facing === 'environment' ? 'user' : 'environment');
   await M.startCameraStream();
-  M.renderCameraBar();
+  M.renderZoomDial();
   M.toast(`${M.ico('camera', 15, 2)} ${ar ? 'تم التبديل إلى: ' : 'Switched to: '}${M.L(chosen.label)}`);
 };
 
@@ -442,77 +426,129 @@ M.acts['scan-pick-cam'] = async el => {
   M.scan.deviceId = chosen.deviceId || null;
   M.scan.facing = chosen.facing || 'environment';
   await M.startCameraStream();
-  M.renderCameraBar();
+  M.renderZoomDial();
   M.toast(`${M.ico('camera', 15, 2)} ${ar ? 'تم اختيار: ' : 'Selected: '}${M.L(chosen.label)}`);
 };
 
-/* Camera Zoom Dial (0.5 · 1x · 2.5) with Apple Gold Active Indicator */
+/* ── Hardware Camera Lens & Zoom Steps Detection ── */
+M.detectPhoneZoomSteps = () => {
+  const cams = M.scan.cameras || [];
+  let teleStep = '2.5';
+  cams.forEach(c => {
+    const s = ((c.label?.en || '') + ' ' + (c.label?.ar || '') + ' ' + (c.id || '')).toLowerCase();
+    if (s.includes('3x') || s.includes('telephoto 3') || s.includes('3.0')) teleStep = '3';
+    else if (s.includes('2.5x') || s.includes('telephoto 2.5')) teleStep = '2.5';
+    else if (s.includes('2x') || s.includes('telephoto 2')) {
+      if (teleStep !== '3' && teleStep !== '2.5') teleStep = '2';
+    }
+  });
+
+  if (M.scan.stream) {
+    const track = M.scan.stream.getVideoTracks?.()[0];
+    if (track && typeof track.getCapabilities === 'function') {
+      try {
+        const caps = track.getCapabilities();
+        if (caps.zoom && caps.zoom.max) {
+          if (caps.zoom.max >= 3) teleStep = '3';
+          else if (caps.zoom.max >= 2.5) teleStep = '2.5';
+          else if (caps.zoom.max >= 2 && teleStep !== '3' && teleStep !== '2.5') teleStep = '2';
+        }
+      } catch {}
+    }
+  }
+  return ['0.5', '1', teleStep];
+};
+
+M.renderZoomDial = () => {
+  const dial = document.getElementById('camZoomDial');
+  if (!dial) return;
+  const steps = M.detectPhoneZoomSteps();
+  const curZoom = M.scan.zoom || '1';
+  dial.innerHTML = steps.map(z => {
+    const isThis = String(z) === String(curZoom);
+    const label = isThis ? `${z}x` : z;
+    return `<button type="button" class="cam-z-btn ${isThis ? 'on' : ''}" data-act="scan-zoom" data-zoom="${z}">${label}</button>`;
+  }).join('');
+};
+
+/* Camera Zoom Dial (0.5 · 1x · 2.5/3x) with Apple Gold Active Indicator */
 M.acts['scan-zoom'] = async el => {
   if (M.scan.busy) return;
   const zoom = el.dataset.zoom || '1';
-  await M.setCameraZoom(zoom);
+  await M.applyCameraZoom(zoom);
 };
 
-M.setCameraZoom = async (zoom = '1') => {
-  M.scan.zoom = zoom;
+M.applyCameraZoom = async (zoom = '1') => {
+  M.scan.zoom = String(zoom);
+  const zNum = Number(zoom) || 1;
+
+  // 1. Update UI dial buttons
   const dial = document.getElementById('camZoomDial');
   if (dial) {
     const btns = dial.querySelectorAll('.cam-z-btn');
     btns.forEach(b => {
-      const isThis = b.dataset.zoom === zoom;
+      const isThis = String(b.dataset.zoom) === String(zoom);
       b.classList.toggle('on', isThis);
       const base = b.dataset.zoom;
       b.textContent = isThis ? `${base}x` : base;
     });
   }
 
-  // 1. Hardware digital/optical camera track zoom
+  // 2. Hardware camera lens switching (Ultra-wide 0.5x vs Wide 1x vs Telephoto 2.5x/3x)
+  if (Array.isArray(M.scan.cameras) && M.scan.cameras.length > 1) {
+    let targetCam = null;
+    if (zNum < 1) {
+      targetCam = M.scan.cameras.find(c => {
+        const s = ((c.label?.en || '') + ' ' + (c.label?.ar || '') + ' ' + (c.id || '')).toLowerCase();
+        return s.includes('ultra') || s.includes('0.5') || s.includes('wide-angle');
+      });
+    } else if (zNum > 1.4) {
+      targetCam = M.scan.cameras.find(c => {
+        const s = ((c.label?.en || '') + ' ' + (c.label?.ar || '') + ' ' + (c.id || '')).toLowerCase();
+        return s.includes('tele') || s.includes('zoom') || s.includes('2.5') || s.includes('3x') || s.includes(String(zoom));
+      });
+    } else {
+      targetCam = M.scan.cameras.find(c => c.id === 'env_main' || (!c.id?.includes('wide') && !c.id?.includes('tele')));
+    }
+
+    if (targetCam && targetCam.deviceId && targetCam.deviceId !== M.scan.deviceId) {
+      M.scan.deviceId = targetCam.deviceId;
+      M.scan.facing = targetCam.facing || 'environment';
+      await M.startCameraStream();
+    }
+  }
+
+  // 3. Hardware digital/optical track zoom
+  let trackZoomApplied = false;
   if (M.scan.stream) {
     const track = M.scan.stream.getVideoTracks?.()[0];
     if (track && typeof track.getCapabilities === 'function') {
       try {
         const caps = track.getCapabilities();
         if (caps.zoom) {
-          const zNum = Number(zoom) || 1;
           const targetZ = Math.min(caps.zoom.max || 10, Math.max(caps.zoom.min || 1, zNum));
           await track.applyConstraints({ advanced: [{ zoom: targetZ }] });
+          trackZoomApplied = true;
         }
       } catch {}
     }
   }
 
-  // 2. Lens switching when device exposes ultra-wide vs telephoto cameras
-  if (Array.isArray(M.scan.cameras) && M.scan.cameras.length > 1) {
-    let targetCam = null;
-    if (zoom === '0.5') {
-      targetCam = M.scan.cameras.find(c => {
-        const s = (c.label?.en || c.label?.ar || c.id || '').toLowerCase();
-        return s.includes('ultra') || s.includes('wide') || s.includes('0.5');
-      });
-    } else if (zoom === '2.5') {
-      targetCam = M.scan.cameras.find(c => {
-        const s = (c.label?.en || c.label?.ar || c.id || '').toLowerCase();
-        return s.includes('tele') || s.includes('zoom') || s.includes('2.5') || s.includes('3x');
-      });
-    } else if (zoom === '1') {
-      targetCam = M.scan.cameras.find(c => c.id === 'env_main' || (!c.id?.includes('wide') && !c.id?.includes('tele')));
-    }
-    if (targetCam && targetCam.deviceId && targetCam.deviceId !== M.scan.deviceId) {
-      M.scan.deviceId = targetCam.deviceId;
-      M.scan.facing = targetCam.facing || 'environment';
-      await M.startCameraStream();
-      M.renderCameraBar();
-    }
-  }
-
-  // 3. Smooth viewfinder visual zoom scale
+  // 4. Viewfinder visual zoom scale
+  // CRITICAL: NEVER apply scale(0.5) to #camVideo so it never shrinks in the center!
+  // Must remain 100% full size (scale(1) / 'none') for 0.5x and 1x.
   const vid = document.getElementById('camVideo');
   if (vid) {
-    vid.style.transform = zoom === '1' ? 'none' : `scale(${zoom})`;
-    vid.style.transformOrigin = 'center center';
+    if (zNum <= 1 || trackZoomApplied) {
+      vid.style.transform = 'none';
+    } else {
+      vid.style.transform = `scale(${zNum})`;
+      vid.style.transformOrigin = 'center center';
+    }
     vid.style.transition = 'transform .22s cubic-bezier(0.34, 1.56, 0.64, 1)';
   }
 };
+M.setCameraZoom = M.applyCameraZoom;
 
 M.closeScanner = () => {
   M.clearScanTimers();
