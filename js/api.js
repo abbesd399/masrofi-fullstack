@@ -796,9 +796,23 @@ If it is a bill, periodic invoice or obligation (electricity/gas, water, telecom
 
   async analyzeScan(payload) {
     if (payload && payload.image) {
+      // 1. Cloud AI Vision (Gemini / Groq / OpenRouter) if user provided an API key
       const directFirst = await this.analyzeImageDirectAI(payload.mode, payload.image, payload.priceHistory);
       if (directFirst) {
         return { success: true, aiUsed: true, mode: payload.mode, extracted: directFirst };
+      }
+
+      // 2. Native On-Device Apple Vision (VNRecognizeTextRequest) - 100% offline, free, keyless OCR
+      if (typeof window !== 'undefined' && window.M && typeof window.M.recognizeTextNative === 'function') {
+        try {
+          const nativeRes = await window.M.recognizeTextNative(payload.image);
+          if (nativeRes && typeof window.M.parseReceiptFromOCR === 'function') {
+            const parsed = window.M.parseReceiptFromOCR(nativeRes);
+            if (parsed) {
+              return { success: true, aiUsed: true, mode: parsed.mode, extracted: parsed };
+            }
+          }
+        } catch {}
       }
     }
     try {

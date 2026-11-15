@@ -70,7 +70,19 @@ function build() {
     }
   }
 
-  console.log('[Build] www/ directory and native app icons prepared successfully.');
+  // Sync latest www/ directly into native iOS and Android asset folders for Xcode/Capacitor builds
+  const iosPublic = path.join(ROOT, 'ios', 'App', 'App', 'public');
+  copyDir(WWW, iosPublic);
+
+  const androidPublic = path.join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'public');
+  copyDir(WWW, androidPublic);
+
+  const nativeTemplatePublic = path.join(ROOT, 'ios', 'App', 'native_template', 'public');
+  if (fs.existsSync(path.dirname(nativeTemplatePublic))) {
+    copyDir(WWW, nativeTemplatePublic);
+  }
+
+  console.log('[Build] www/ directory and native iOS/Android assets synchronized successfully.');
 }
 
 build();

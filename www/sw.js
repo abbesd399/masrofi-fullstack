@@ -1,4 +1,4 @@
-const CACHE_NAME = 'masrofi-cache-v9';
+const CACHE_NAME = 'masrofi-cache-v17';
 const STATIC_ASSETS = [
   './',
   './index.html',

@@ -2,6 +2,7 @@ import UIKit
 import WebKit
 import AVFoundation
 import UserNotifications
+import Vision
 import Capacitor
 
 class MasrofiViewController: CAPBridgeViewController, WKScriptMessageHandler {
@@ -12,6 +13,7 @@ class MasrofiViewController: CAPBridgeViewController, WKScriptMessageHandler {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.userContentController.add(self, name: "masrofiNotify")
         config.userContentController.add(self, name: "masrofiScheduleBg")
+        config.userContentController.add(self, name: "masrofiRecognizeText")
         return config
     }
 
@@ -75,6 +77,42 @@ class MasrofiViewController: CAPBridgeViewController, WKScriptMessageHandler {
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
             let req = UNNotificationRequest(identifier: "masrofi_monthly_ai_check", content: content, trigger: trigger)
             UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
+        } else if message.name == "masrofiRecognizeText" {
+            guard let base64Str = dict["base64"] as? String,
+                  let callbackId = dict["callbackId"] as? String else { return }
+
+            let cleanBase64 = base64Str.replacingOccurrences(of: "data:image/jpeg;base64,", with: "")
+                                       .replacingOccurrences(of: "data:image/png;base64,", with: "")
+            guard let imageData = Data(base64Encoded: cleanBase64),
+                  let uiImage = UIImage(data: imageData),
+                  let cgImage = uiImage.cgImage else {
+                return
+            }
+
+            let request = VNRecognizeTextRequest { (req, err) in
+                guard let observations = req.results as? [VNRecognizedTextObservation] else { return }
+                var recognizedStrings: [String] = []
+                for obs in observations {
+                    if let candidate = obs.topCandidates(1).first {
+                        recognizedStrings.append(candidate.string)
+                    }
+                }
+                let fullText = recognizedStrings.joined(separator: "\n")
+                DispatchQueue.main.async {
+                    let jsonData = (try? JSONSerialization.data(withJSONObject: recognizedStrings)) ?? Data()
+                    let jsonArr = String(data: jsonData, encoding: .utf8) ?? "[]"
+                    let js = "window.M && window.M.onNativeVisionResult && window.M.onNativeVisionResult('\(callbackId)', { fullText: \(fullText.debugDescription), lines: \(jsonArr) });"
+                    self.webView?.evaluateJavaScript(js, completionHandler: nil)
+                }
+            }
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["ar-SA", "fr-FR", "en-US"]
+            request.usesLanguageCorrection = true
+
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            DispatchQueue.global(qos: .userInitiated).async {
+                try? handler.perform([request])
+            }
         }
     }
 

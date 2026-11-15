@@ -88,30 +88,41 @@ M.refreshCameraList = async () => {
       let frontCount = 0;
       M.scan.cameras = videoInputs.map((d, idx) => {
         const raw = (d.label || '').toLowerCase();
-        const isFront = /front|user|facetime|أمام/.test(raw);
-        const isUltra = /ultra|0\.5|wide angle|واسع/.test(raw);
-        const isTele = /tele|zoom|تقريب/.test(raw);
+        const isFront = /front|user|facetime|أمام|avant/.test(raw);
+        const isVirtual = /dual|triple|مزدوج|ثلاثي|double/.test(raw);
+        const isUltra = !isFront && !isVirtual && /ultra|0\.5|واسع|grand-angle/.test(raw);
+        const isTele = !isFront && !isVirtual && /tele|zoom|مقرب|تقريب|2\.5|3x|téléobjectif/.test(raw);
         let arLbl = '';
         let enLbl = '';
+        let zoomStep = '1';
         if (isFront) {
           frontCount++;
           arLbl = frontCount > 1 ? `الأمامية ${frontCount}` : 'الكاميرا الأمامية';
           enLbl = frontCount > 1 ? `Front ${frontCount}` : 'Front Camera';
+        } else if (isVirtual) {
+          arLbl = /triple|ثلاثي/.test(raw) ? 'الكاميرا الخلفية الثلاثية' : 'الكاميرا الخلفية المزدوجة';
+          enLbl = /triple|ثلاثي/.test(raw) ? 'Triple Camera' : 'Dual Camera';
+          zoomStep = '1';
         } else if (isUltra) {
-          arLbl = 'الخلفية الواسعة (0.5x)';
+          arLbl = 'الخلفية الواسعة جدًا (0.5x)';
           enLbl = 'Ultra-Wide (0.5x)';
+          zoomStep = '0.5';
         } else if (isTele) {
-          arLbl = 'كاميرا التقريب (Tele)';
+          arLbl = 'الخلفية المقربة (Tele)';
           enLbl = 'Telephoto';
+          zoomStep = '2.5';
         } else {
           backCount++;
-          arLbl = backCount === 1 ? 'الخلفية الأساسية' : `الكاميرا الخلفية ${backCount}`;
-          enLbl = backCount === 1 ? 'Main Back' : `Back Camera ${backCount}`;
+          arLbl = backCount === 1 ? 'الخلفية الأساسية (1x)' : `الكاميرا الخلفية ${backCount}`;
+          enLbl = backCount === 1 ? 'Main Back (1x)' : `Back Camera ${backCount}`;
+          zoomStep = '1';
         }
         return {
           id: 'cam_' + idx,
           deviceId: d.deviceId,
           facing: isFront ? 'user' : 'environment',
+          isVirtual,
+          zoomStep,
           label: { ar: arLbl, en: enLbl }
         };
       });
@@ -155,34 +166,35 @@ M.startCameraStream = async () => {
 
   // 1. Primary: Real hardware camera stream inside the app via getUserMedia (Full-bleed cover, no 4:3 box constraints)
   if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
+    const isBack = M.scan.facing !== 'user';
+    const targetFacing = isBack ? 'environment' : 'user';
     const constraintsList = [];
+
     if (M.scan.deviceId) {
       constraintsList.push({
         video: {
-          deviceId: { exact: M.scan.deviceId }
+          deviceId: { exact: M.scan.deviceId },
+          facingMode: { ideal: targetFacing }
         },
         audio: false
       });
     }
-    constraintsList.push(
-      {
-        video: {
-          facingMode: { exact: M.scan.facing || 'environment' }
-        },
-        audio: false
-      },
-      {
-        video: {
-          facingMode: { ideal: M.scan.facing || 'environment' }
-        },
-        audio: false
-      },
-      {
-        video: { facingMode: M.scan.facing || 'environment' },
-        audio: false
-      },
-      { video: true, audio: false }
-    );
+
+    if (isBack) {
+      // STRICT: Back camera lens requests MUST NEVER fall back to { video: true } or open front camera
+      constraintsList.push(
+        { video: { facingMode: { exact: 'environment' } }, audio: false },
+        { video: { facingMode: { ideal: 'environment' } }, audio: false },
+        { video: { facingMode: 'environment' }, audio: false }
+      );
+    } else {
+      constraintsList.push(
+        { video: { facingMode: { exact: 'user' } }, audio: false },
+        { video: { facingMode: { ideal: 'user' } }, audio: false },
+        { video: { facingMode: 'user' }, audio: false },
+        { video: true, audio: false }
+      );
+    }
 
     for (const constraints of constraintsList) {
       try {
@@ -191,6 +203,15 @@ M.startCameraStream = async () => {
           stream.getTracks().forEach(t => t.stop());
           return false;
         }
+
+        // Hardware facing guard: if user requested back camera, verify hardware did not give front lens
+        const track = stream.getVideoTracks?.()[0];
+        const settings = track?.getSettings ? track.getSettings() : {};
+        if (isBack && settings.facingMode === 'user') {
+          track.stop();
+          continue; // try next constraint or fallback
+        }
+
         M.scan.stream = stream;
         vid.srcObject = stream;
         vid.setAttribute('playsinline', '');
@@ -483,12 +504,18 @@ M.renderZoomDial = () => {
 M.acts['scan-zoom'] = async el => {
   if (M.scan.busy) return;
   const zoom = el.dataset.zoom || '1';
+  // No-Op on repeated tap if already active with live back camera
+  if (M.scan.facing !== 'user' && String(M.scan.zoom) === String(zoom) && M.scan.stream?.active) {
+    return;
+  }
   await M.applyCameraZoom(zoom);
 };
 
 M.applyCameraZoom = async (zoom = '1') => {
   M.scan.zoom = String(zoom);
   const zNum = Number(zoom) || 1;
+  // Strictly enforce back camera mode when zooming via dial
+  M.scan.facing = 'environment';
 
   // 1. Update UI dial buttons
   const dial = document.getElementById('camZoomDial');
@@ -503,25 +530,21 @@ M.applyCameraZoom = async (zoom = '1') => {
   }
 
   // 2. Hardware camera lens switching (Ultra-wide 0.5x vs Wide 1x vs Telephoto 2.5x/3x)
-  if (Array.isArray(M.scan.cameras) && M.scan.cameras.length > 1) {
+  // Strictly filter back lenses only and avoid virtual/combined multi-camera setups
+  const backCams = (M.scan.cameras || []).filter(c => c.facing === 'environment' && !c.isVirtual);
+  if (backCams.length > 1) {
     let targetCam = null;
     if (zNum < 1) {
-      targetCam = M.scan.cameras.find(c => {
-        const s = ((c.label?.en || '') + ' ' + (c.label?.ar || '') + ' ' + (c.id || '')).toLowerCase();
-        return s.includes('ultra') || s.includes('0.5') || s.includes('wide-angle');
-      });
+      targetCam = backCams.find(c => c.zoomStep === '0.5' || /ultra|0\.5|واسع|grand-angle/i.test((c.label?.en || '') + ' ' + (c.label?.ar || '')));
     } else if (zNum > 1.4) {
-      targetCam = M.scan.cameras.find(c => {
-        const s = ((c.label?.en || '') + ' ' + (c.label?.ar || '') + ' ' + (c.id || '')).toLowerCase();
-        return s.includes('tele') || s.includes('zoom') || s.includes('2.5') || s.includes('3x') || s.includes(String(zoom));
-      });
+      targetCam = backCams.find(c => c.zoomStep === '2.5' || /tele|zoom|مقرب|تقريب|2\.5|3x|téléobjectif/i.test((c.label?.en || '') + ' ' + (c.label?.ar || '')));
     } else {
-      targetCam = M.scan.cameras.find(c => c.id === 'env_main' || (!c.id?.includes('wide') && !c.id?.includes('tele')));
+      targetCam = backCams.find(c => c.zoomStep === '1' && !/ultra|0\.5|tele|zoom/i.test((c.label?.en || '') + ' ' + (c.label?.ar || ''))) || backCams[0];
     }
 
     if (targetCam && targetCam.deviceId && targetCam.deviceId !== M.scan.deviceId) {
       M.scan.deviceId = targetCam.deviceId;
-      M.scan.facing = targetCam.facing || 'environment';
+      M.scan.facing = 'environment';
       M.stopCameraStream();
       await new Promise(r => setTimeout(r, 60)); // 60ms delay for iOS AVCaptureSession to release hardware
       const ok = await M.startCameraStream();
@@ -1046,4 +1069,176 @@ M.saveManual = f => {
   M.freshBillId = nid;
   M.closeScanner(); M.s.billSeg = 'bills'; M.s.billFilter = 'all'; M.go('bills'); M.toast(`${M.ico('calendar', 16)} ${M.t('addedB')}`); M.checkThreshold();
   setTimeout(() => { M.freshBillId = null; }, 1600);
+};
+
+/* ── Native Apple Vision OCR & Smart Heuristic Parser Bridge ── */
+M._nativeVisionCallbacks = M._nativeVisionCallbacks || {};
+
+M.onNativeVisionResult = (callbackId, result) => {
+  if (M._nativeVisionCallbacks && M._nativeVisionCallbacks[callbackId]) {
+    M._nativeVisionCallbacks[callbackId](result);
+    delete M._nativeVisionCallbacks[callbackId];
+  }
+};
+
+M.recognizeTextNative = async (base64) => {
+  if (typeof window !== 'undefined' && window.webkit?.messageHandlers?.masrofiRecognizeText) {
+    return new Promise(resolve => {
+      const callbackId = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      M._nativeVisionCallbacks = M._nativeVisionCallbacks || {};
+      const timer = setTimeout(() => {
+        delete M._nativeVisionCallbacks[callbackId];
+        resolve(null);
+      }, 5000);
+      M._nativeVisionCallbacks[callbackId] = res => {
+        clearTimeout(timer);
+        resolve(res);
+      };
+      try {
+        window.webkit.messageHandlers.masrofiRecognizeText.postMessage({
+          callbackId,
+          base64
+        });
+      } catch (e) {
+        clearTimeout(timer);
+        delete M._nativeVisionCallbacks[callbackId];
+        resolve(null);
+      }
+    });
+  }
+  return null;
+};
+
+/* High-accuracy Arabic / French / English heuristic OCR parser */
+M.parseReceiptFromOCR = (ocr) => {
+  if (!ocr || (!ocr.fullText && !Array.isArray(ocr.lines))) return null;
+  const lines = Array.isArray(ocr.lines) && ocr.lines.length
+    ? ocr.lines
+    : (ocr.fullText || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const text = (ocr.fullText || lines.join('\n')).toLowerCase();
+
+  const normalizeNums = str => (str || '')
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+
+  // 1. Detect Mode: Bill vs Purchase Receipt
+  const billRegex = /فاتورة|facture|bill|sonelgaz|سونلغاز|steg|ade|eau|water|الماء|الكهرباء|gaz|gas|télécom|telecom|اتصالات|djezzy|جيزي|ooredoo|أوريدو|mobilis|موبيليس|stc|zain|internet|انترنت|assurance|تأمين|loyer|إيجار|échéance|استحقاق|quittance|redevance/i;
+  const isBill = billRegex.test(text);
+  const mode = isBill ? 'bill' : 'receipt';
+
+  // 2. Extract Merchant / Biller Name
+  let nameAr = '';
+  let nameEn = '';
+
+  if (/sonelgaz|سونلغاز/.test(text)) {
+    nameAr = 'سونلغاز (الكهرباء والغاز)';
+    nameEn = 'Sonelgaz';
+  } else if (/algérie télécom|اتصالات الجزائر|algerie telecom/.test(text)) {
+    nameAr = 'اتصالات الجزائر (الإنترنت)';
+    nameEn = 'Algérie Télécom';
+  } else if (/seaal|ade|الجزائرية للمياه|eau/.test(text)) {
+    nameAr = 'الجزائرية للمياه';
+    nameEn = 'ADE / Water';
+  } else if (/djezzy|جيزي/.test(text)) {
+    nameAr = 'جيزي (Djezzy)';
+    nameEn = 'Djezzy';
+  } else if (/ooredoo|أوريدو/.test(text)) {
+    nameAr = 'أوريدو (Ooredoo)';
+    nameEn = 'Ooredoo';
+  } else if (/mobilis|موبيليس/.test(text)) {
+    nameAr = 'موبيليس (Mobilis)';
+    nameEn = 'Mobilis';
+  } else if (/uno|أونو/.test(text)) {
+    nameAr = 'أونو هايبرماركت';
+    nameEn = 'Uno Hypermarket';
+  } else if (/carrefour|كارفور/.test(text)) {
+    nameAr = 'كارفور';
+    nameEn = 'Carrefour';
+  } else {
+    for (let i = 0; i < Math.min(lines.length, 5); i++) {
+      const candidate = lines[i].replace(/[^\p{L}\p{N}\s-]/gu, '').trim();
+      if (candidate.length >= 3 && candidate.length <= 40 && !/^\d+$/.test(candidate) && !/ticket|facture|recu|reçu|وصل|bienvenue|مرحبا|caisse/i.test(candidate)) {
+        nameAr = candidate;
+        nameEn = candidate;
+        break;
+      }
+    }
+  }
+
+  if (!nameAr) {
+    nameAr = isBill ? 'فاتورة خدمات' : 'وصل مشتريات';
+    nameEn = isBill ? 'Service Bill' : 'Store Receipt';
+  }
+
+  // 3. Extract Amounts
+  const amounts = [];
+  const totalKeywords = /total|المجموع|المبلغ|صافي|net\s*à\s*payer|montant|somme|dinar|da|dzd|ريال|درهم|جنيه/i;
+
+  for (const line of lines) {
+    const cleanLine = normalizeNums(line);
+    const hasTotal = totalKeywords.test(cleanLine);
+    const matches = cleanLine.match(/\b\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?\b|\b\d+(?:\.\d{1,2})?\b/g);
+    if (matches) {
+      for (const m of matches) {
+        const num = parseFloat(m.replace(/[,\s]/g, ''));
+        if (num >= 5 && num <= 500000) {
+          amounts.push({ val: num, isTotal: hasTotal });
+        }
+      }
+    }
+  }
+
+  let chosenAmount = 0;
+  const totalCandidates = amounts.filter(a => a.isTotal);
+  if (totalCandidates.length > 0) {
+    chosenAmount = totalCandidates[totalCandidates.length - 1].val;
+  } else if (amounts.length > 0) {
+    chosenAmount = Math.max(...amounts.map(a => a.val));
+  }
+
+  // 4. Extract Due Date / Day
+  let extractedDay = null;
+  const dateMatch = text.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/) || text.match(/(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})/);
+  if (dateMatch) {
+    if (dateMatch[1] && dateMatch[1].length <= 2) {
+      const d = parseInt(dateMatch[1], 10);
+      if (d >= 1 && d <= 31) extractedDay = d;
+    }
+  }
+
+  // 5. Return structured format
+  if (isBill) {
+    let cat = 'utilities';
+    if (/télécom|telecom|internet|djezzy|ooredoo|mobilis/i.test(text)) cat = 'net';
+    else if (/assurance|سيارة|car|auto/i.test(text)) cat = 'car';
+    else if (/loyer|إيجار|rent/i.test(text)) cat = 'home';
+    else if (/école|مدرسة|creche/i.test(text)) cat = 'family';
+
+    return {
+      mode: 'bill',
+      targetId: 'custom',
+      kind: 'var',
+      cat,
+      biller: { ar: nameAr, en: nameEn },
+      amount: chosenAmount || 3200,
+      dueDay: extractedDay || 18,
+      isCurrentMonth: true,
+      dueText: { ar: `يوم ${extractedDay || 18} من الشهر`, en: `Day ${extractedDay || 18} of month` },
+      detectedHikes: []
+    };
+  } else {
+    let cat = 'groceries';
+    if (/pharmacie|صيدلية|medecin|طبيب/i.test(text)) cat = 'health';
+    else if (/restaurant|مطعم|café|قهوة/i.test(text)) cat = 'dining';
+    else if (/station|وقود|essence|naftal|نفطال/i.test(text)) cat = 'car';
+
+    return {
+      mode: 'receipt',
+      merchant: { ar: nameAr, en: nameEn },
+      cat,
+      amount: chosenAmount || 1250,
+      day: extractedDay || (new Date()).getDate(),
+      items: [{ n: { ar: nameAr, en: nameEn }, q: 1, p: chosenAmount || 1250 }],
+      detectedHikes: []
+    };
+  }
 };
