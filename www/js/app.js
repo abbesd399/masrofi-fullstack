@@ -555,28 +555,7 @@ if (typeof document !== 'undefined') {
   document.addEventListener('dblclick', ev => ev.preventDefault(), { passive: false });
 }
 
-/* ── Name Input Guard: Accepts letters & spaces only, strictly blocks all digits ── */
-M.isNameField = el => {
-  if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return false;
-  const type = (el.type || '').toLowerCase();
-  if (type === 'file' || type === 'hidden' || type === 'range' || type === 'date' || type === 'checkbox' || type === 'number') return false;
-
-  const id = (el.id || '').toLowerCase();
-  const name = (el.name || '').toLowerCase();
-
-  const nameKeys = ['username', 'obusername', 'mname', 'familyname', 'membername'];
-  if (nameKeys.some(k => id === k || id.includes(k) || name === k || name.includes(k))) {
-    return true;
-  }
-  return false;
-};
-
-M.sanitizeNameValue = val => {
-  if (val == null) return '';
-  return String(val).replace(/[\d\u0660-\u0669\u06F0-\u06F9]/g, '');
-};
-
-/* ── Strict Numeric Input Guard: Blocks non-numeric chars & converts Eastern digits in real-time ── */
+/* ── Clean Numeric Sanitizer Helpers (Zero input blockage for text/name fields) ── */
 M.getNumericMode = el => {
   if (!el || el.tagName !== 'INPUT') return null;
   const im = (el.getAttribute('inputmode') || '').toLowerCase();
@@ -600,15 +579,13 @@ M.getNumericMode = el => {
 
 M.sanitizeNumericValue = (val, mode = 'decimal') => {
   if (val == null) return '';
-  // Convert Eastern Arabic / Persian digits to Western (0-9)
   let s = typeof M.toWesternDigits === 'function' ? M.toWesternDigits(String(val)) : String(val);
   s = s.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, d => String.fromCharCode(d.charCodeAt(0) & 0x0f));
 
   if (mode === 'integer') {
-    return s.replace(/[^\d]/g, '');
+    return s.replace(/[^0-9]/g, '');
   }
-  // Decimal: allow digits and at most one dot
-  s = s.replace(/,/g, '.').replace(/[^\d.]/g, '');
+  s = s.replace(/,/g, '.').replace(/[^0-9.]/g, '');
   const dotIdx = s.indexOf('.');
   if (dotIdx !== -1) {
     s = s.slice(0, dotIdx + 1) + s.slice(dotIdx + 1).replace(/\./g, '');
@@ -616,6 +593,7 @@ M.sanitizeNumericValue = (val, mode = 'decimal') => {
   return s;
 };
 
+/* Global Escape key listener (no preventDefault on input keystrokes) */
 window.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') {
     if (M.sheet?.isOpen) {
@@ -623,123 +601,35 @@ window.addEventListener('keydown', ev => {
     } else if (M.scan?.open) {
       M.closeScanner();
     }
-    return;
   }
+});
 
-  const el = ev.target;
-  // 1. Guard for Name fields (accepts letters and spaces only, strictly blocks digits)
-  if (M.isNameField && M.isNameField(el)) {
-    if (ev.key && ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
-      if (/[\d\u0660-\u0669\u06F0-\u06F9]/.test(ev.key)) {
-        ev.preventDefault();
-        return;
-      }
-    }
-  }
-
-  // 2. Strict keyboard guard for numeric / decimal inputs
-  const mode = M.getNumericMode ? M.getNumericMode(el) : null;
-  if (!mode) return;
-
-  // Allow navigation and shortcut keys
-  if (
-    ev.ctrlKey || ev.metaKey || ev.altKey ||
-    ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(ev.key)
-  ) {
-    return;
-  }
-
-  if (ev.key.length === 1) {
-    const converted = M.toWesternDigits ? M.toWesternDigits(ev.key) : ev.key;
-    if (mode === 'integer') {
-      if (!/^\d$/.test(converted)) {
-        ev.preventDefault();
-      }
-    } else if (mode === 'decimal') {
-      if (converted === '.' || converted === ',') {
-        if (el.value.includes('.')) {
-          ev.preventDefault();
-        }
-      } else if (!/^\d$/.test(converted)) {
-        ev.preventDefault();
-      }
-    }
-  }
-}, true);
-
-// Intercept beforeinput (for virtual keyboards & autofill)
-window.addEventListener('beforeinput', ev => {
-  const el = ev.target;
-  // Name fields: block digits in beforeinput
-  if (M.isNameField && M.isNameField(el) && ev.data) {
-    if (/[\d\u0660-\u0669\u06F0-\u06F9]/.test(ev.data)) {
-      ev.preventDefault();
-      return;
-    }
-  }
-
-  // Numeric fields: block non-numeric characters
-  const mode = M.getNumericMode ? M.getNumericMode(el) : null;
-  if (!mode || !ev.data) return;
-
-  const raw = M.toWesternDigits ? M.toWesternDigits(ev.data) : ev.data;
-  if (mode === 'integer' && /[^\d]/.test(raw)) {
-    ev.preventDefault();
-  } else if (mode === 'decimal') {
-    const normalized = raw.replace(/,/g, '.');
-    if (/[^\d.]/.test(normalized) || (normalized.includes('.') && el.value.includes('.'))) {
-      ev.preventDefault();
-    }
-  }
-}, true);
-
-// Real-time input sanitizer on phone & document
+/* ── Real-time Input Sanitizer: Only cleans inputmode="numeric" or "decimal" fields ── */
 phone.addEventListener('input', ev => {
   const el = ev.target;
-  // Name fields: strip digits in real-time
-  if (M.isNameField && M.isNameField(el) && typeof el.value === 'string') {
-    const original = el.value;
-    const sanitized = M.sanitizeNameValue(original);
-    if (original !== sanitized) {
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      el.value = sanitized;
-      if (typeof start === 'number') {
-        try {
-          const diff = original.length - sanitized.length;
-          el.setSelectionRange(Math.max(0, start - diff), Math.max(0, end - diff));
-        } catch {}
-      }
-    }
+  if (!el || el.tagName !== 'INPUT') return;
+
+  const im = (el.getAttribute('inputmode') || '').toLowerCase();
+  const type = (el.type || '').toLowerCase();
+
+  // 1. Strict numeric integer cleaning
+  if (im === 'numeric') {
+    let s = typeof M.toWesternDigits === 'function' ? M.toWesternDigits(el.value) : el.value;
+    s = s.replace(/[^0-9]/g, '');
+    if (el.value !== s) el.value = s;
     return;
   }
 
-  // Numeric fields: sanitize digits in real-time
-  const mode = M.getNumericMode ? M.getNumericMode(el) : null;
-  if (mode && typeof el.value === 'string') {
-    const original = el.value;
-    const sanitized = M.sanitizeNumericValue(original, mode);
-    if (original !== sanitized) {
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      el.value = sanitized;
-      if (typeof start === 'number') {
-        try {
-          const diff = original.length - sanitized.length;
-          el.setSelectionRange(Math.max(0, start - diff), Math.max(0, end - diff));
-        } catch {}
-      }
+  // 2. Decimal amount cleaning (allows digits and at most one dot)
+  if (im === 'decimal' || type === 'number') {
+    let s = typeof M.toWesternDigits === 'function' ? M.toWesternDigits(el.value) : el.value;
+    s = s.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+    const dot = s.indexOf('.');
+    if (dot !== -1) {
+      s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '');
     }
+    if (el.value !== s) el.value = s;
     return;
-  }
-
-  // Fallback for non-numeric fields containing Eastern digits
-  if (el && typeof el.value === 'string' && /[\u0660-\u0669\u06F0-\u06F9]/.test(el.value)) {
-    const start = el.selectionStart, end = el.selectionEnd;
-    el.value = M.toWesternDigits(el.value);
-    if (typeof start === 'number') {
-      try { el.setSelectionRange(start, end); } catch {}
-    }
   }
 }, true);
 phone.addEventListener('submit', ev => {

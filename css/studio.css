@@ -9,13 +9,13 @@ html,body{
   -webkit-text-size-adjust:100%;
   text-size-adjust:100%;
   overscroll-behavior:none;
-  user-select:none;
-  -webkit-user-select:none;
 }
-input,textarea,select{
-  user-select:text;
-  -webkit-user-select:text;
-  font-size:16px !important; /* Strict iOS WebKit rule: >= 16px prevents Safari/WebView auto-zoom on focus! */
+input, textarea, select, label{
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -webkit-touch-callout: default !important;
+  pointer-events: auto !important;
+  font-size: 16px !important; /* Strict iOS WebKit rule: >= 16px prevents Safari/WebView auto-zoom on focus! */
 }
 body{
   font-family:Inter,system-ui,sans-serif;color:#E6EAF2;overflow:hidden;position:relative;
