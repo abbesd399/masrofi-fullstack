@@ -63,10 +63,10 @@ if (fs.existsSync(iconSrc)) {
   fs.copyFileSync(iconSrc, path.join(appDir, 'AppIcon60x60@3x.png'));
 }
 
-// 4. Compress using PowerShell on Windows or Python zipfile on Linux/macOS
-console.log('Compressing with authentic PKZIP headers...');
+// 4. Compress with POSIX forward slashes for authentic iOS IPA & Sideloadly compatibility
+console.log('Compressing with authentic PKZIP headers & POSIX forward-slash paths...');
 if (process.platform === 'win32') {
-  const psScript = `Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory('${tempRoot.replace(/\\/g, '/')}', '${ipaOutput.replace(/\\/g, '/')}')`;
+  const psScript = `Add-Type -AssemblyName System.IO.Compression; Add-Type -AssemblyName System.IO.Compression.FileSystem; $src = '${tempRoot.replace(/\\/g, '/')}'; $out = '${ipaOutput.replace(/\\/g, '/')}'; if (Test-Path $out) { Remove-Item $out }; $zip = [System.IO.Compression.ZipFile]::Open($out, [System.IO.Compression.ZipArchiveMode]::Create); Get-ChildItem -Path $src -Recurse -File | ForEach-Object { $rel = $_.FullName.Substring((Resolve-Path $src).Path.Length + 1).Replace('\\', '/'); [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $rel) | Out-Null }; $zip.Dispose();`;
   execSync(`powershell -NoProfile -Command "${psScript}"`, { cwd: rootDir, stdio: 'inherit' });
 } else {
   execSync(`python3 -c "import shutil; shutil.make_archive('${ipaOutput.replace(/\.ipa$/, '')}', 'zip', '${tempRoot}'); import os; os.rename('${ipaOutput.replace(/\.ipa$/, '.zip')}', '${ipaOutput}')"`, { cwd: rootDir, stdio: 'inherit' });
