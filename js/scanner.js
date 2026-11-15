@@ -153,15 +153,13 @@ M.startCameraStream = async () => {
   const vid = document.getElementById('camVideo');
   if (!vid || !M.scan.open) return false;
 
-  // 1. Primary: Real hardware camera stream inside the app via getUserMedia
+  // 1. Primary: Real hardware camera stream inside the app via getUserMedia (Full-bleed cover, no 4:3 box constraints)
   if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
     const constraintsList = [];
     if (M.scan.deviceId) {
       constraintsList.push({
         video: {
-          deviceId: { exact: M.scan.deviceId },
-          width: { ideal: 1600 },
-          height: { ideal: 1200 }
+          deviceId: { exact: M.scan.deviceId }
         },
         audio: false
       });
@@ -169,17 +167,13 @@ M.startCameraStream = async () => {
     constraintsList.push(
       {
         video: {
-          facingMode: { exact: M.scan.facing || 'environment' },
-          width: { ideal: 1600 },
-          height: { ideal: 1200 }
+          facingMode: { exact: M.scan.facing || 'environment' }
         },
         audio: false
       },
       {
         video: {
-          facingMode: { ideal: M.scan.facing || 'environment' },
-          width: { ideal: 1600 },
-          height: { ideal: 1200 }
+          facingMode: { ideal: M.scan.facing || 'environment' }
         },
         audio: false
       },
@@ -408,7 +402,14 @@ M.acts['scan-flip'] = async el => {
   const chosen = cams[M.scan.cameraIdx];
   M.scan.deviceId = chosen.deviceId || null;
   M.scan.facing = chosen.facing || (M.scan.facing === 'environment' ? 'user' : 'environment');
-  await M.startCameraStream();
+  M.stopCameraStream();
+  await new Promise(r => setTimeout(r, 60));
+  const ok = await M.startCameraStream();
+  if (!ok) {
+    M.scan.deviceId = null;
+    M.scan.facing = 'environment';
+    await M.startCameraStream();
+  }
   M.renderZoomDial();
   M.toast(`${M.ico('camera', 15, 2)} ${ar ? 'تم التبديل إلى: ' : 'Switched to: '}${M.L(chosen.label)}`);
 };
@@ -425,7 +426,14 @@ M.acts['scan-pick-cam'] = async el => {
   M.scan.cameraIdx = idx;
   M.scan.deviceId = chosen.deviceId || null;
   M.scan.facing = chosen.facing || 'environment';
-  await M.startCameraStream();
+  M.stopCameraStream();
+  await new Promise(r => setTimeout(r, 60));
+  const ok = await M.startCameraStream();
+  if (!ok) {
+    M.scan.deviceId = null;
+    M.scan.facing = 'environment';
+    await M.startCameraStream();
+  }
   M.renderZoomDial();
   M.toast(`${M.ico('camera', 15, 2)} ${ar ? 'تم اختيار: ' : 'Selected: '}${M.L(chosen.label)}`);
 };
@@ -514,7 +522,14 @@ M.applyCameraZoom = async (zoom = '1') => {
     if (targetCam && targetCam.deviceId && targetCam.deviceId !== M.scan.deviceId) {
       M.scan.deviceId = targetCam.deviceId;
       M.scan.facing = targetCam.facing || 'environment';
-      await M.startCameraStream();
+      M.stopCameraStream();
+      await new Promise(r => setTimeout(r, 60)); // 60ms delay for iOS AVCaptureSession to release hardware
+      const ok = await M.startCameraStream();
+      if (!ok) {
+        M.scan.deviceId = null;
+        M.scan.facing = 'environment';
+        await M.startCameraStream();
+      }
     }
   }
 
