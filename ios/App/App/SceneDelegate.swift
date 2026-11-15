@@ -70,8 +70,10 @@ class MasrofiViewController: CAPBridgeViewController, WKScriptMessageHandler {
             content.body = body
             content.sound = .default
 
+            let payday = max(1, min(28, (dict["payday"] as? Int) ?? 1))
             var dateComponents = DateComponents()
-            dateComponents.hour = 10
+            dateComponents.day = payday
+            dateComponents.hour = 9
             dateComponents.minute = 0
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
             let req = UNNotificationRequest(identifier: "masrofi_monthly_ai_check", content: content, trigger: trigger)

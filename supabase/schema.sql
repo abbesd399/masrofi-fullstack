@@ -1,11 +1,24 @@
 -- ============================================================================
--- Masrofi (مصروفي) — Supabase PostgreSQL Schema + Realtime Family Sync
+-- Masrofi (مصروفي) — Optimized & Organized Supabase PostgreSQL Schema + Realtime
 -- كيفية الاستخدام:
 -- 1. افتح لوحة تحكم Supabase -> SQL Editor -> New Query
--- 2. الصق هذا الملف بالكامل واضغط Run
+-- 2. الصق هذا الملف بالكامل واضغط Run (آمن للتشغيل عدة مرات Idempotent)
 -- ============================================================================
 
--- 1. جدول الإعدادات العامة للعائلة (الراتب، السيارة، هدف التوفير، التنبيهات)
+-- دالة تلقائية لتحديث حقل updated_at عند أي تعديل
+CREATE OR REPLACE FUNCTION public.masrofi_set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+-- 1. جدول الإعدادات العامة للعائلة (الراتب، السيارة، هدف التوفير، التنبيهات، كود العائلة)
 CREATE TABLE IF NOT EXISTS public.config (
   key TEXT PRIMARY KEY,
   val JSONB NOT NULL,
@@ -27,7 +40,7 @@ CREATE TABLE IF NOT EXISTS public.purchases (
   created_at BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
--- 3. جدول الفواتير الشهرية (ثابتة ومتغيرة) والفواتير المجدولة
+-- 3. جدول الفواتير الشهرية والدورية (ثابتة ومتغيرة) مع دعم دورة التكرار والعداد الذكي
 CREATE TABLE IF NOT EXISTS public.bills (
   id TEXT PRIMARY KEY,
   name_ar TEXT NOT NULL,
@@ -39,6 +52,7 @@ CREATE TABLE IF NOT EXISTS public.bills (
   paid BOOLEAN DEFAULT FALSE,
   paid_day INTEGER,
   kind TEXT DEFAULT 'fixed',
+  cycle_days INTEGER DEFAULT 30,
   scanned BOOLEAN DEFAULT FALSE,
   is_scheduled BOOLEAN DEFAULT FALSE,
   due_str_ar TEXT,
@@ -47,6 +61,9 @@ CREATE TABLE IF NOT EXISTS public.bills (
   rem_str_en TEXT,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ترقية جدول الفواتير في حال كان منشأً مسبقاً بدون عمود cycle_days
+ALTER TABLE public.bills ADD COLUMN IF NOT EXISTS cycle_days INTEGER DEFAULT 30;
 
 -- 4. جدول سلة المقاضي المشتركة بين العائلة
 CREATE TABLE IF NOT EXISTS public.cart (
@@ -59,7 +76,7 @@ CREATE TABLE IF NOT EXISTS public.cart (
   created_at BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
--- 5. جدول التزامات وصيانة السيارة
+-- 5. جدول التزامات وصيانة السيارة والعدادات التنازلية
 CREATE TABLE IF NOT EXISTS public.car_items (
   id TEXT PRIMARY KEY,
   ico TEXT DEFAULT 'car',
@@ -69,11 +86,32 @@ CREATE TABLE IF NOT EXISTS public.car_items (
   s_ar TEXT,
   s_en TEXT,
   days INTEGER DEFAULT 30,
+  cycle_days INTEGER DEFAULT 365,
   ai BOOLEAN DEFAULT FALSE,
   sort_order INTEGER DEFAULT 0
 );
 
--- تفعيل سياسات الوصول (RLS) لمشاركة المحفظة بين أفراد العائلة
+ALTER TABLE public.car_items ADD COLUMN IF NOT EXISTS cycle_days INTEGER DEFAULT 365;
+
+-- فهارس عالية الأداء (B-Tree Indexes) لتسريع الاستعلامات والفرز الفوري
+CREATE INDEX IF NOT EXISTS idx_purchases_created_desc ON public.purchases (created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_purchases_cat ON public.purchases (cat);
+CREATE INDEX IF NOT EXISTS idx_bills_scheduled_due ON public.bills (is_scheduled, paid, due);
+CREATE INDEX IF NOT EXISTS idx_cart_got_created ON public.cart (got, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_car_items_sort ON public.car_items (sort_order ASC, days ASC);
+
+-- ربط مشغلات التحديث التلقائي للوقت (Triggers)
+DROP TRIGGER IF EXISTS trg_config_updated_at ON public.config;
+CREATE TRIGGER trg_config_updated_at
+  BEFORE UPDATE ON public.config
+  FOR EACH ROW EXECUTE FUNCTION public.masrofi_set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_bills_updated_at ON public.bills;
+CREATE TRIGGER trg_bills_updated_at
+  BEFORE UPDATE ON public.bills
+  FOR EACH ROW EXECUTE FUNCTION public.masrofi_set_updated_at();
+
+-- تفعيل سياسات الوصول (RLS) لمشاركة المحفظة بين أفراد العائلة بسلاسة
 ALTER TABLE public.config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bills ENABLE ROW LEVEL SECURITY;

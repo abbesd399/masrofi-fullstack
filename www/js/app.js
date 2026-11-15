@@ -1,5 +1,24 @@
 /* Masrofi — Native App Controller + Simplified Registration + Built-In AI Monthly Alerts (7,000 km Oil Cycle) */
-M.s = Object.assign(M.seed(), { os: 'ios', theme: 'light', lang: 'ar', tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false });
+M.getInitialThemeMode = () => {
+  try {
+    const isTest = typeof window !== 'undefined' && (window.__MASROFI_TEST_MODE__ || window.location.port === '3088' || window.location.port === '3099');
+    if (isTest) return 'light';
+    return localStorage.getItem('masrofi_theme_mode') || 'auto';
+  } catch {
+    return 'auto';
+  }
+};
+M.resolveSystemTheme = () => {
+  try {
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+  } catch {}
+  return 'light';
+};
+const _initThemeMode = M.getInitialThemeMode();
+const _initTheme = _initThemeMode === 'auto' ? M.resolveSystemTheme() : _initThemeMode;
+M.s = Object.assign(M.seed(), { os: 'ios', themeMode: _initThemeMode, theme: _initTheme, lang: 'ar', tab: 'home', billSeg: 'bills', famSeg: 'feed', privacy: false, feedSearch: '' });
 M.TABS = [['home', 'home'], ['bills', 'receipt'], ['family', 'users'], ['insights', 'spark']];
 
 M.onb = {
@@ -31,7 +50,12 @@ M.appbarHtml = () => {
   const unpaid = (s.bills || []).filter(b => !b.paid).length;
   const oilDue = M.getCarOilStatus ? M.getCarOilStatus().dueThisMonth : false;
   const curId = curUser?.id || 'abu';
+  const isDark = s.theme === 'dark';
+  const themeTitle = s.themeMode === 'auto'
+    ? (ar ? 'تلقائي حسب الجهاز (اضغط للتبديل)' : 'Auto device theme (tap to switch)')
+    : (isDark ? (ar ? 'الوضع الليلي مفعّل' : 'Dark mode') : (ar ? 'الوضع النهاري مفعّل' : 'Light mode'));
   return `<div class="ab-title">${s.tab === 'home' ? `<div class="ab-sub">${famLabel} · ${M.t('november')}</div>` : ''}<h2 style="${s.tab === 'home' ? 'font-size:18px;line-height:1.3;white-space:nowrap' : ''}">${titles[s.tab]}</h2></div>
+    <button type="button" class="icon-btn" data-act="theme-toggle" title="${themeTitle}" aria-label="theme">${M.ico(isDark ? 'sun' : 'moon', 19)}</button>
     <button type="button" class="icon-btn" data-act="bell" id="bell" aria-label="alerts">${M.ico('bell', 20)}${(unpaid || oilDue) ? '<span class="dot"></span>' : ''}</button>
     ${s.tab === 'home' ? M.avatar(curId, 'ring', `style="width:40px;height:40px;cursor:pointer" data-act="member" data-id="${curId}"`) : ''}`;
 };
@@ -449,6 +473,44 @@ M.acts['close-sheet'] = () => {
   if (overScanner) { M.liftSheet(false); M.openScanner(M.scan.mode); }
   else if (M.s.tab === 'insights') M.render();
 };
+M.setThemeMode = mode => {
+  const ar = M.s.lang === 'ar';
+  M.s.themeMode = mode; // 'auto' | 'light' | 'dark'
+  try { localStorage.setItem('masrofi_theme_mode', mode); } catch {}
+  M.s.theme = mode === 'auto' ? M.resolveSystemTheme() : mode;
+  M.applyEnv({ keepSheet: true });
+  const label = mode === 'auto'
+    ? (ar ? '📱 الوضع التلقائي (حسب الجهاز)' : '📱 Auto (Device Theme)')
+    : (mode === 'dark' ? (ar ? '🌙 الوضع الليلي' : '🌙 Dark Mode') : (ar ? '☀️ الوضع النهاري' : '☀️ Light Mode'));
+  M.toast(label);
+};
+M.acts['theme-toggle'] = el => {
+  M.replayAnim(el, 'bump', 350);
+  const next = M.s.theme === 'dark' ? 'light' : 'dark';
+  M.setThemeMode(next);
+};
+M.acts['set-theme-mode'] = el => {
+  const mode = el.dataset.v || 'auto';
+  M.setThemeMode(mode);
+  if (M.sheet?.isOpen && M.s.currentMemberId) {
+    const wrap = el.parentElement;
+    if (wrap) wrap.querySelectorAll('.kp-btn').forEach(b => b.classList.toggle('on', b === el));
+  }
+};
+if (typeof window !== 'undefined' && window.matchMedia) {
+  try {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onSysThemeChange = ev => {
+      if ((M.s.themeMode || 'auto') === 'auto') {
+        M.s.theme = ev.matches ? 'dark' : 'light';
+        M.applyEnv({ keepSheet: true });
+      }
+    };
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onSysThemeChange);
+    else if (typeof mq.addListener === 'function') mq.addListener(onSysThemeChange);
+  } catch {}
+}
+
 M.acts.bell = el => { M.replayAnim(el.querySelector('.ic'), 'wiggle', 820); setTimeout(() => M.acts['banner-open'](), 420); };
 M.acts['ai-month-notify'] = () => {
   M.sheet.close();
@@ -507,8 +569,15 @@ M.SIM = {
 /* ── studio controls ── */
 M.applyEnv = (opts = {}) => {
   const s = M.s, ph = M.phone(), dev = M.$('#device');
+  if (s.themeMode === 'auto' && !(typeof window !== 'undefined' && (window.__MASROFI_TEST_MODE__ || window.location.port === '3088' || window.location.port === '3099'))) {
+    s.theme = M.resolveSystemTheme();
+  }
   dev.dataset.os = ph.dataset.os = s.os;
   ph.dataset.theme = s.theme;
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.theme = s.theme;
+    if (document.body) document.body.dataset.theme = s.theme;
+  }
   ph.dir = s.lang === 'ar' ? 'rtl' : 'ltr'; ph.lang = s.lang;
   document.querySelectorAll('.seg[data-ctl]').forEach(g => g.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === s[g.dataset.ctl])));
   if (M.$('#scanner').classList.contains('on')) M.openScanner(M.scan.mode);
@@ -575,6 +644,14 @@ phone.addEventListener('input', ev => {
   if (el.name === 'userName') M.onb.userName = el.value;
   if (el.name === 'familyName') M.onb.familyName = el.value;
   if (el.name === 'joinCode') M.onb.joinCode = el.value;
+  if (el.id === 'feedSearchIn') {
+    M.s.feedSearch = el.value;
+    const feedBox = document.getElementById('feedListRows');
+    if (feedBox && typeof M.feedRowsOnlyHtml === 'function') {
+      feedBox.innerHTML = M.feedRowsOnlyHtml();
+    }
+    return;
+  }
 
   const im = (el.getAttribute('inputmode') || '').toLowerCase();
   if (im === 'numeric' || im === 'decimal') {
@@ -609,6 +686,7 @@ phone.addEventListener('submit', ev => {
   if (f.dataset.form === 'edit-member') M.saveEditMember(f);
   if (f.dataset.form === 'join-code') M.saveJoinFamilyCode(f);
   if (f.dataset.form === 'car-edit') M.saveCarEdit(f);
+  if (f.dataset.form === 'car-item-add' && typeof M.saveCarItemAdd === 'function') M.saveCarItemAdd(f);
   if (f.dataset.form === 'fuel-add') M.saveFuelFillUp(f);
   if (f.dataset.form === 'goal-edit') M.saveGoalEdit(f);
   if (f.dataset.form === 'onb-step2') M.handleOnbStep2(f);

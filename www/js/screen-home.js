@@ -1,4 +1,4 @@
-/* Tab 1 — Home dashboard: AI monthly alert banner (7,000 km oil + bills) · hero salary card · family strip · simplified profile */
+/* Tab 1 — Home dashboard: AI monthly & payday alert · hero salary card · live countdowns strip · family strip */
 M.screens = M.screens || {};
 M.acts = M.acts || {};
 
@@ -16,7 +16,10 @@ M.screens.home = () => {
   const last = (s.purchases || [])[0];
   const lm = last ? M.member(last.member) : null;
   const ar = s.lang === 'ar';
-  const aiAlert = M.getMonthlyAIAlert ? M.getMonthlyAIAlert() : { title: M.t('alertTitle'), body: '', oil: { dueThisMonth: false }, unpaid: [] };
+  const aiAlert = M.getMonthlyAIAlert ? M.getMonthlyAIAlert() : { title: M.t('alertTitle'), body: '', oil: M.getCarOilStatus(), unpaid: [], report: M.getPaydaySmartReport() };
+  const rep = aiAlert.report || M.getPaydaySmartReport();
+  const oil = rep.oil;
+  const nearestBill = rep.unpaidBills?.[0];
 
   let banner = '';
   if (s.bannerHidden) {
@@ -28,6 +31,37 @@ M.screens.home = () => {
       <button type="button" class="b-x" data-act="banner-hide" aria-label="dismiss">${M.ico('close', 14, 2.4)}</button>
     </div>`;
   }
+
+  // Live Smart Countdowns Strip (Payday + 7,000 km Oil Predictor + Next Bill Countdown)
+  const countdownStripHtml = `
+    <div class="cd-strip anim">
+      <div class="cd-card" data-act="banner-open">
+        <div class="cd-top">
+          <span class="cd-ico" style="--cc:#0D9488">${M.ico('wallet', 14, 2.2)}</span>
+          <span class="cd-lbl">${ar ? 'عداد الراتب' : 'Payday'}</span>
+        </div>
+        <b class="cd-val">${rep.daysToPayday === 0 ? (ar ? 'نزل اليوم! 🎉' : 'Today! 🎉') : (ar ? `باقي ${rep.daysToPayday} يوم` : `${rep.daysToPayday}d left`)}</b>
+        <span class="cd-sub">${ar ? `يوم ${rep.payday} من كل شهر` : `Day ${rep.payday} monthly`}</span>
+      </div>
+
+      <div class="cd-card ${oil.dueThisMonth ? 'warn' : ''}" data-act="goto-car">
+        <div class="cd-top">
+          <span class="cd-ico" style="--cc:#F59E0B">${M.ico('drop', 14, 2.2)}</span>
+          <span class="cd-lbl">${ar ? 'زيت 7,000 كم' : '7,000 km Oil'}</span>
+        </div>
+        <b class="cd-val">${M.fmt(oil.toOil)} ${M.t('km')}</b>
+        <span class="cd-sub">${ar ? `~${oil.days} يوم (${oil.predictedDate.ar.split(' ').slice(0, 2).join(' ')})` : `~${oil.days}d (${oil.predictedDate.en.split(',')[0]})`}</span>
+      </div>
+
+      <div class="cd-card ${nearestBill && nearestBill.cd.daysLeft <= 5 ? 'crit' : ''}" data-act="goto-bills">
+        <div class="cd-top">
+          <span class="cd-ico" style="--cc:#6366F1">${M.ico('receipt', 14, 2.2)}</span>
+          <span class="cd-lbl">${ar ? 'أقرب فاتورة' : 'Next Bill'}</span>
+        </div>
+        <b class="cd-val">${nearestBill ? (ar ? `باقي ${nearestBill.cd.daysLeft} يوم` : `${nearestBill.cd.daysLeft}d left`) : (ar ? 'لا التزامات' : 'All clear')}</b>
+        <span class="cd-sub">${nearestBill ? M.L(nearestBill.bill.n) : (ar ? 'كل الفواتير مسددة' : 'All bills paid')}</span>
+      </div>
+    </div>`;
 
   const tickerHtml = last
     ? `<div class="ticker" data-act="receipt" data-id="${last.id}">
@@ -67,6 +101,7 @@ M.screens.home = () => {
       </div>
     </div>
   </div>
+  ${countdownStripHtml}
   <div class="card fam-strip anim">
     <div class="sec-h">
       <h3>${M.L(s.familyName || { ar: M.t('family'), en: M.t('family') })}</h3>
@@ -113,29 +148,52 @@ M.acts['banner-show'] = () => {
 };
 M.acts['banner-open'] = () => {
   const ar = M.s.lang === 'ar';
-  const aiAlert = M.getMonthlyAIAlert ? M.getMonthlyAIAlert() : { title: M.t('alertTitle'), body: '', oil: M.getCarOilStatus(), unpaid: [] };
-  const oil = aiAlert.oil;
-  const unpaid = aiAlert.unpaid || [];
+  const aiAlert = M.getMonthlyAIAlert ? M.getMonthlyAIAlert() : { title: M.t('alertTitle'), body: '', oil: M.getCarOilStatus(), unpaid: [], report: M.getPaydaySmartReport() };
+  const rep = aiAlert.report || M.getPaydaySmartReport();
+  const oil = rep.oil;
+  const unpaid = rep.unpaidBills || [];
 
   M.sheet.open(aiAlert.title, `
     <div class="alert-box" style="--bc:var(--primary)">
       <span class="ab-i">${M.ico('spark', 20)}</span>
-      <div><b>${ar ? 'المساعد الذكي لهذا الشهر' : 'Monthly AI Assistant'}</b> — ${aiAlert.body}</div>
-    </div>
-
-    <div class="sec-h" style="margin-top:4px"><h3>${ar ? 'متابعة زيت السيارة (دائماً عند 7,000 كم)' : 'Car Oil Change Tracker (Always at 7,000 km)'}</h3></div>
-    <div class="group">
-      <div class="row" data-act="goto-car">
-        <span class="tile" style="--c:#F59E0B">${M.ico('drop', 20)}</span>
-        <div class="r-main">
-          <div class="r-t">${ar ? 'تغيير زيت المحرك (كل 7,000 كم)' : 'Engine Oil Change (Every 7,000 km)'} <span class="badge info">AI</span></div>
-          <div class="r-s">${ar ? `العداد: ${M.fmt(oil.odo)} كم · التغيير عند: ${M.fmt(oil.nextOil)} كم` : `Current: ${M.fmt(oil.odo)} km · Always at: ${M.fmt(oil.nextOil)} km`}</div>
-        </div>
-        <div class="count ${oil.toOil <= 1000 ? 'crit' : 'warn'}"><b class="num">${M.fmt(oil.toOil)}</b><span>${M.t('km')}</span></div>
+      <div>
+        <b>${ar ? 'تحليل الذكاء الاصطناعي لراتب والتزامات الشهر' : 'AI Salary & Monthly Obligations Analysis'}</b><br>
+        ${aiAlert.body}
       </div>
     </div>
 
-    <div class="sec-h" style="margin-top:4px"><h3>${ar ? 'تعبئة البنزين (اكتب سعر التعبئة)' : 'Petrol Fill-Up (Enter Price)'}</h3></div>
+    <div class="group" style="padding:12px 14px">
+      <div class="kv">
+        <span>${ar ? 'موعد نزول الراتب القادم' : 'Next Payday Countdown'}</span>
+        <b style="color:var(--primary)">${rep.daysToPayday === 0 ? (ar ? 'اليوم يوم الراتب! 🎉' : 'Payday is Today! 🎉') : (ar ? `بعد ${rep.daysToPayday} يوم (يوم ${rep.payday})` : `In ${rep.daysToPayday} days (Day ${rep.payday})`)}</b>
+      </div>
+      <div class="kv">
+        <span>${ar ? 'مجموع التزامات الشهر (فواتير + زيت إن وجد)' : 'Recommended Monthly Reserve'}</span>
+        <b class="priv" style="color:var(--warn)">${M.money(rep.totalRecommendedReserve)}</b>
+      </div>
+      <div style="margin-top:8px">
+        <button type="button" class="btn sm tonal" data-act="payday-drop" style="width:100%;height:38px;border-radius:11px">
+          ${M.ico('wallet', 15, 2)} <span>${ar ? 'استلمت الراتب اليوم · فحص التزامات الشهر الجديد 💰' : 'Received Salary Today · Run New Month AI Check 💰'}</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="sec-h" style="margin-top:4px"><h3>${ar ? 'توقع الذكاء الاصطناعي لتغيير الزيت (كل 7,000 كم)' : 'AI 7,000 km Oil Change Predictor'}</h3></div>
+    <div class="group" style="padding:12px 14px">
+      <div class="row" data-act="goto-car" style="padding:4px 0">
+        <span class="tile" style="--c:#F59E0B">${M.ico('drop', 20)}</span>
+        <div class="r-main">
+          <div class="r-t">${ar ? 'تغيير زيت المحرك (دورة 7,000 كم)' : 'Engine Oil Change (7,000 km Cycle)'} <span class="badge ${oil.dueThisMonth ? 'warn' : 'info'}">${oil.dueThisMonth ? (ar ? 'مستحق هذا الشهر!' : 'Due this month!') : 'AI'}</span></div>
+          <div class="r-s">${ar ? `العداد: ${M.fmt(oil.odo)} كم · القادم عند: ${M.fmt(oil.nextOil)} كم` : `Odo: ${M.fmt(oil.odo)} km · Next at: ${M.fmt(oil.nextOil)} km`}</div>
+          <div class="r-s" style="color:var(--primary);font-weight:600">${ar ? `📅 الموعد المتوقع: ${oil.predictedDate.ar} (خلال ${oil.days} يوم)` : `📅 Predicted: ${oil.predictedDate.en} (in ${oil.days} days)`}</div>
+          <div class="r-s muted">${ar ? `🔄 التغيير الذي بعده: عند ${M.fmt(oil.followingOil)} كم (${oil.followingDate.ar})` : `🔄 Subsequent change: at ${M.fmt(oil.followingOil)} km (${oil.followingDate.en})`}</div>
+        </div>
+        <div class="count ${oil.toOil <= 1000 ? 'crit' : 'warn'}"><b class="num">${M.fmt(oil.toOil)}</b><span>${M.t('km')}</span></div>
+      </div>
+      <div class="bar" style="margin-top:8px"><i style="width:${oil.pctUsed}%;--bc:${oil.toOil <= 1000 ? 'var(--crit)' : '#F59E0B'}"></i></div>
+    </div>
+
+    <div class="sec-h" style="margin-top:4px"><h3>${ar ? 'تعبئة البنزين السريعة (اكتب سعر التعبئة)' : 'Quick Petrol Fill-Up (Enter Price)'}</h3></div>
     <form class="add-item" data-form="fuel-add">
       <div class="add-row">
         <div class="in-wrap in-price" style="flex:1">
@@ -148,18 +206,47 @@ M.acts['banner-open'] = () => {
     </form>
 
     ${unpaid.length ? `
-      <div class="sec-h" style="margin-top:4px"><h3>${ar ? 'فواتير هذا الشهر غير المسددة' : 'Unpaid Bills This Month'}</h3></div>
-      <div class="group">${unpaid.map(b => `<div class="row" data-act="bill" data-id="${b.id}">${M.tile(b.cat)}
-        <div class="r-main"><div class="r-t">${M.L(b.n)}</div>
-          <div class="r-s"><span>${M.t('dueOn')(M.dateStr(b.due))}</span> · <span class="b-kind ${b.kind === 'var' ? 'var' : 'fixed'}">${M.t(b.kind === 'var' ? 'billVar' : 'billFixed')}</span></div></div>
-        <div class="r-end"><div class="r-amt priv">${M.money(b.amount)}</div><span class="badge info">${M.t('reservedAuto')}</span></div></div>`).join('')}</div>
+      <div class="sec-h" style="margin-top:4px"><h3>${ar ? 'عداد الفواتير المستحقة وتوقع الفاتورة القادمة' : 'Due Bills Countdown & Next-Bill Forecast'}</h3></div>
+      <div class="group">${unpaid.map(({ bill: b, cd }) => `<div class="row" data-act="bill" data-id="${b.id}">${M.tile(b.cat)}
+        <div class="r-main">
+          <div class="r-t">${M.L(b.n)}</div>
+          <div class="r-s"><span>⏳ ${ar ? `باقي ${cd.daysLeft} يوم` : `${cd.daysLeft}d left`}</span> · <span>${ar ? `القادمة بعدها: ${cd.nextBillDate.ar}` : `Next after: ${cd.nextBillDate.en}`}</span></div>
+        </div>
+        <div class="r-end"><div class="r-amt priv">${M.money(b.amount)}</div><span class="badge ${cd.daysLeft <= 5 ? 'crit' : 'info'}">${ar ? `${cd.daysLeft} يوم` : `${cd.daysLeft}d`}</span></div></div>`).join('')}</div>
     ` : ''}
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
-      <button type="button" class="btn tonal" data-act="ai-month-notify">${M.ico('bell', 16, 2)} <span>${ar ? 'إرسال إشعار الشهر' : 'Send Month Alert'}</span></button>
+      <button type="button" class="btn tonal" data-act="ai-month-notify">${M.ico('bell', 16, 2)} <span>${ar ? 'إرسال إشعار للهاتف' : 'Push Phone Alert'}</span></button>
       <button type="button" class="btn" data-act="goto-car">${M.ico('car', 16, 2)} <span>${ar ? 'قسم السيارة والفواتير' : 'Car & Bills Hub'}</span></button>
     </div>`);
 };
+
+/* One-Tap Payday Salary Drop: Resets monthly cycle, alerts user about all bills & 7,000 km oil due this month */
+M.acts['payday-drop'] = () => {
+  const ar = M.s.lang === 'ar';
+  M.s.day = M.s.payday || 1;
+  // Reset recurring monthly bills for the new salary cycle while keeping their amounts & cycles
+  (M.s.bills || []).forEach(b => {
+    const cyc = M.inferBillCycleDays ? M.inferBillCycleDays(b) : 30;
+    if (cyc <= 65) {
+      b.paid = false;
+      b.paidDay = null;
+    }
+  });
+  M.s.bannerHidden = false;
+  if (M.api) {
+    M.api.saveLocal(M.s);
+  }
+  M.sheet.close();
+  M.render();
+  M.triggerMonthlyAINotification();
+  const rep = M.getPaydaySmartReport();
+  const oilMsg = rep.oil.dueThisMonth
+    ? (ar ? ` · تنبيه: يجب تغيير زيت السيارة هذا الشهر (متبقي ${M.fmt(rep.oil.toOil)} كم)!` : ` · Oil change due this month!`)
+    : '';
+  M.toast(`${M.ico('checkc', 16)} ${ar ? `مبارك نزول الراتب! تم حجز ${M.fmt(rep.totalUnpaidBillsAmt)} د.ج للفواتير` : `Payday logged! Reserved ${M.fmt(rep.totalUnpaidBillsAmt)} DZD`}${oilMsg}`);
+};
+
 M.acts['goto-bills'] = () => { M.sheet.close(); M.s.billSeg = 'bills'; M.go('bills'); };
 M.acts['goto-car'] = () => { M.sheet.close(); M.s.billSeg = 'car'; M.go('bills'); };
 M.acts.privacy = (el, ev) => {
@@ -314,19 +401,24 @@ M.saveJoinFamilyCode = async f => {
 };
 
 M.acts.hero = () => {
-  const s = M.s, c = M.calc(), col = { safe: 'var(--safe)', warn: 'var(--warn)', crit: 'var(--crit)' }[c.state];
-  const unpaid = (s.bills || []).filter(b => !b.paid);
+  const s = M.s, c = M.calc(), ar = s.lang === 'ar', col = { safe: 'var(--safe)', warn: 'var(--warn)', crit: 'var(--crit)' }[c.state];
+  const rep = M.getPaydaySmartReport();
+  const unpaid = rep.unpaidBills || [];
   M.sheet.open(M.t('breakdown'), `
     <div class="alert-box" style="--bc:${col}"><span class="ab-i">${M.ico(c.state === 'safe' ? 'checkc' : 'alert', 20)}</span><div><b>${M.t('st' + c.state[0].toUpperCase() + c.state.slice(1))}</b> — ${M.t(c.state + 'Msg')}</div></div>
     <div class="group priv">
       <div class="kv"><span>${M.t('salary')}</span><b style="display:flex;align-items:center;gap:6px">${M.money(s.salary)} <button type="button" class="inline-edit-btn" data-act="edit-salary">${M.ico('pen', 13, 2)}</button></b></div>
       <div class="kv"><span>${M.t('spent')}</span><b>${M.moneyNeg(c.spent)}</b></div>
       <div class="kv"><span>${M.t('reserved')}</span><b style="color:var(--warn)">${M.money(c.reserved)}</b></div>
+      ${rep.oil.dueThisMonth ? `<div class="kv"><span>${ar ? 'احتياطي تغيير زيت السيارة هذا الشهر' : 'Oil Change Reserve This Month'}</span><b style="color:#F59E0B">${M.money(rep.oil.oilCost)}</b></div>` : ''}
       <div class="kv"><span>${M.t('trueBal')}</span><b style="color:var(--primary);font-size:18px">${M.money(c.spendable)}</b></div>
       <div class="kv"><span>${M.t('daily')}</span><b>${M.money(c.daily)}</b></div>
     </div>
+    <button type="button" class="btn tonal" data-act="payday-drop" style="margin-top:2px">
+      ${M.ico('wallet', 16, 2)} <span>${ar ? 'استلمت الراتب اليوم · بدء دورة شهر جديد 💰' : 'Received Salary Today · Start New Month Cycle 💰'}</span>
+    </button>
     ${unpaid.length ? `<div><div class="sec-h"><h3>${M.t('upcoming')}</h3></div><div class="group">
-      ${unpaid.map(b => `<div class="row" data-act="bill" data-id="${b.id}">${M.tile(b.cat, 38)}<div class="r-main"><div class="r-t">${M.L(b.n)}</div><div class="r-s"><span>${M.t('dueOn')(M.dateStr(b.due))}</span> · <span class="b-kind ${b.kind === 'var' ? 'var' : 'fixed'}">${M.t(b.kind === 'var' ? 'billVar' : 'billFixed')}</span></div></div><div class="r-amt priv">${M.money(b.amount)}</div></div>`).join('')}
+      ${unpaid.map(({ bill: b, cd }) => `<div class="row" data-act="bill" data-id="${b.id}">${M.tile(b.cat, 38)}<div class="r-main"><div class="r-t">${M.L(b.n)}</div><div class="r-s"><span>⏳ ${ar ? `باقي ${cd.daysLeft} يوم` : `${cd.daysLeft}d left`}</span> · <span>${ar ? `القادمة: ${cd.nextBillDate.ar}` : `Next: ${cd.nextBillDate.en}`}</span></div></div><div class="r-amt priv">${M.money(b.amount)}</div></div>`).join('')}
     </div></div>` : ''}`);
 };
 
@@ -340,6 +432,7 @@ M.acts['edit-salary'] = () => {
 };
 
 M.saveSalaryEdit = f => {
+  const ar = M.s.lang === 'ar';
   const raw = typeof f.sal.value === 'string' ? M.toWesternDigits(f.sal.value) : f.sal.value;
   const v = parseFloat(raw);
   if (!(v > 0)) return;
@@ -355,6 +448,10 @@ M.saveSalaryEdit = f => {
   M.sheet.close();
   M.render();
   M.checkThreshold();
+  const rep = M.getPaydaySmartReport();
+  if (rep.oil.dueThisMonth || rep.unpaidBills.length > 0) {
+    setTimeout(() => M.triggerMonthlyAINotification(), 500);
+  }
   M.toast(`${M.ico('checkc', 16, 2)} ${M.t('salaryUpdated')}: ${M.fmt(v)} ${M.t('cur')}`);
 };
 
@@ -377,6 +474,14 @@ M.acts.member = el => {
       <button type="button" class="btn sm tonal" data-act="family-invite">${M.ico('share', 14, 2)} <span>${ar ? 'كود العائلة' : 'Invite'}</span></button>
     </div>
     <div class="group">${list.map(M.purchaseRow).join('') || `<div class="empty">${M.illu('cart')}<p>${ar ? 'لا توجد مشتريات مسجلة لهذا الفرد بعد' : 'No purchases recorded yet'}</p></div>`}</div>
+    <div class="group" style="padding:12px 14px">
+      <div class="small muted" style="margin-bottom:6px;font-weight:700">${ar ? 'مظهر التطبيق والوضع الليلي (يتبع وضع الجهاز تلقائياً)' : 'App Appearance & Dark Mode (Follows Device)'}</div>
+      <div class="kind-pick" style="grid-template-columns:1fr 1fr 1fr">
+        <button type="button" class="kp-btn ${(M.s.themeMode || 'auto') === 'auto' ? 'on' : ''}" data-act="set-theme-mode" data-v="auto">📱 <span>${ar ? 'حسب الجهاز' : 'Device'}</span></button>
+        <button type="button" class="kp-btn ${M.s.themeMode === 'light' ? 'on' : ''}" data-act="set-theme-mode" data-v="light">${M.ico('sun', 14, 2)} <span>${ar ? 'نهاري' : 'Light'}</span></button>
+        <button type="button" class="kp-btn ${M.s.themeMode === 'dark' ? 'on' : ''}" data-act="set-theme-mode" data-v="dark">${M.ico('moon', 14, 2)} <span>${ar ? 'ليلي' : 'Dark'}</span></button>
+      </div>
+    </div>
     <div style="display:flex;gap:8px;margin-top:4px">
       <button type="button" class="btn tonal" data-act="edit-member-open" data-id="${m.id}" style="flex:1">${M.ico('user', 15, 2)} <span>${ar ? 'تعديل البروفايل' : 'Edit Profile'}</span></button>
       <button type="button" class="btn tonal" data-act="edit-salary" style="flex:1">${M.ico('wallet', 15, 2)} <span>${M.t('editSalary')}</span></button>

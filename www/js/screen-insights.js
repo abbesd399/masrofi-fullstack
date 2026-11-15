@@ -1,4 +1,4 @@
-/* Tab 4 — AI Financial Coach: burn-rate forecast · AI price-hike & duplicate guard · optional savings goal */
+/* Tab 4 — AI Financial Coach: burn-rate forecast · AI upcoming obligations & oil predictor · category breakdown · price-hike guard · savings goal */
 M.burnData = () => {
   const s = M.s, c = M.calc(), cum = [0];
   const curDay = Math.max(1, s.day || 1);
@@ -50,6 +50,8 @@ M.animateRings = (root = document) => {
 
 M.screens.insights = () => {
   const s = M.s, ar = s.lang === 'ar', b = M.burnData();
+  const rep = M.getPaydaySmartReport ? M.getPaydaySmartReport() : null;
+  const oil = rep ? rep.oil : M.getCarOilStatus();
   const g = s.goal || { name: { ar: '', en: '' }, target: 0, saved: 0, monthly: 0 };
   const hasGoal = Number(g.target) > 0;
   const target = Math.max(1, g.target || 100000);
@@ -59,6 +61,66 @@ M.screens.insights = () => {
   const goalTitle = (g.name && (g.name.ar || g.name.en)) ? M.L(g.name) : (ar ? 'هدف التوفير العائلي' : 'Family Savings Goal');
   const hikesList = s.hikes || [];
   const dupsList = s.dups || [];
+
+  // Category Spending Breakdown
+  const catTotals = {};
+  for (const p of (s.purchases || [])) {
+    const k = p.cat || 'groceries';
+    catTotals[k] = (catTotals[k] || 0) + (Number(p.amount) || 0);
+  }
+  for (const bl of (s.bills || []).filter(x => x.paid)) {
+    const k = bl.cat || 'utilities';
+    catTotals[k] = (catTotals[k] || 0) + (Number(bl.amount) || 0);
+  }
+  const totalCatSpent = Object.values(catTotals).reduce((a, v) => a + v, 0);
+  const sortedCats = Object.entries(catTotals).sort((a, b) => b[1] - a[1]).slice(0, 4);
+
+  const catBreakdownHtml = sortedCats.length ? `
+    <div class="card anim">
+      <div class="sec-h"><h3>${ar ? 'توزيع المصاريف حسب الفئة' : 'Spending by Category'}</h3><span class="muted small priv">${M.money(totalCatSpent)}</span></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${sortedCats.map(([k, val]) => {
+          const catObj = M.CATS[k] || M.CATS.groceries;
+          const pct = totalCatSpent > 0 ? Math.round((val / totalCatSpent) * 100) : 0;
+          return `<div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;margin-bottom:4px">
+              <span style="display:inline-flex;align-items:center;gap:6px;font-weight:700"><i style="width:9px;height:9px;border-radius:50%;background:${catObj.c};display:inline-block"></i> ${M.L(catObj.n)}</span>
+              <span class="priv"><b>${M.money(val)}</b> <span class="muted">(${pct}%)</span></span>
+            </div>
+            <div class="bar" style="height:6px"><i style="width:${pct}%;--bc:${catObj.c}"></i></div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+
+  // AI Forecast Card (Next Oil Change + Next Bills)
+  const allBillsWithCd = (s.bills || []).slice(0, 3).map(bl => ({ b: bl, cd: M.getBillCountdown(bl) }));
+  const forecastCardHtml = `
+    <div class="card tap anim" data-act="banner-open">
+      <div class="sec-h">
+        <h3>${ar ? 'توقعات الذكاء الاصطناعي للمواعيد القادمة' : 'AI Upcoming Dates & Oil Forecast'}</h3>
+        <span class="badge info">AI</span>
+      </div>
+      <div class="list">
+        <div class="row" style="padding:6px 0">
+          <span class="tile" style="--c:#F59E0B;width:38px;height:38px">${M.ico('drop', 18)}</span>
+          <div class="r-main">
+            <div class="r-t">${ar ? 'موعد تغيير الزيت المتوقع (7,000 كم)' : 'Predicted 7,000 km Oil Change'}</div>
+            <div class="r-s">${ar ? `📅 ${oil.predictedDate.ar} · والذي بعده عند ${M.fmt(oil.followingOil)} كم` : `📅 ${oil.predictedDate.en} · Next at ${M.fmt(oil.followingOil)} km`}</div>
+          </div>
+          <span class="badge ${oil.dueThisMonth ? 'warn' : 'safe'}">${oil.days} ${M.t('days')}</span>
+        </div>
+        ${allBillsWithCd.map(({ b: bl, cd }) => `
+          <div class="row" style="padding:6px 0">
+            ${M.tile(bl.cat, 38)}
+            <div class="r-main">
+              <div class="r-t">${M.L(bl.n)}</div>
+              <div class="r-s">${ar ? `📅 الفاتورة القادمة: ${cd.nextBillDate.ar} (${cd.cycleLabel})` : `📅 Next bill: ${cd.nextBillDate.en} (${cd.cycleLabel})`}</div>
+            </div>
+            <span class="badge ${cd.daysLeft <= 5 && !bl.paid ? 'crit' : 'info'}">${cd.daysLeft} ${M.t('days')}</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
 
   const hikesSection = (hikesList.length || dupsList.length)
     ? `<div class="card tap anim" data-act="hikes">
@@ -100,8 +162,13 @@ M.screens.insights = () => {
     <div class="burn-chart" style="margin-top:12px">${M.burnSvg()}</div>
     <div class="legend" style="color:rgba(255,255,255,.82)"><span><i style="background:#6EE7B7"></i>${M.t('actual')}</span><span><i style="background:rgba(255,255,255,.5)"></i>${M.t('ideal')}</span><span><i style="background:#FCD34D"></i>${M.t('forecast')}</span></div>
   </div>
+  ${forecastCardHtml}
+  ${catBreakdownHtml}
   ${hikesSection}
-  ${goalCard}`;
+  ${goalCard}
+  <button type="button" class="btn tonal anim" data-act="share-month-report">
+    ${M.ico('share', 16, 2)} <span>${ar ? 'مشاركة ملخص وميزانية الشهر للعائلة 📋' : 'Share Monthly Family Summary Report 📋'}</span>
+  </button>`;
 };
 
 M.acts.burn = () => {
@@ -213,4 +280,32 @@ M.saveGoalEdit = f => {
   M.sheet.close();
   M.render();
   M.toast(`${M.ico('checkc', 16)} ${ar ? 'تم حفظ هدف التوفير' : 'Savings goal saved'}`);
+};
+
+M.acts['share-month-report'] = async () => {
+  const s = M.s, ar = s.lang === 'ar', c = M.calc(), oil = M.getCarOilStatus();
+  const unpaid = (s.bills || []).filter(b => !b.paid);
+  const lines = ar ? [
+    `📊 ملخص محفظة العائلة (${M.L(s.familyName || { ar: 'مصروفي', en: 'Masrofi' })})`,
+    `• الراتب الشهري: ${M.fmt(s.salary)} د.ج`,
+    `• إجمالي المصروف حتى الآن: ${M.fmt(c.spent)} د.ج`,
+    `• المحجوز للفواتير والالتزامات: ${M.fmt(c.reserved)} د.ج (${unpaid.length} فواتير غير مسددة)`,
+    `• الصافي الحر المتبقي للصرف: ${M.fmt(c.spendable)} د.ج (${M.fmt(c.daily)} د.ج/يوم)`,
+    `• عداد السيارة: ${M.fmt(oil.odo)} كم (تغيير الزيت القادم عند ${M.fmt(oil.nextOil)} كم · متوقع يوم ${oil.predictedDate.ar})`
+  ] : [
+    `📊 Family Wallet Summary (${M.L(s.familyName || { ar: 'Masrofi', en: 'Masrofi' })})`,
+    `• Monthly Salary: ${M.fmt(s.salary)} DZD`,
+    `• Total Spent: ${M.fmt(c.spent)} DZD`,
+    `• Reserved for Bills & Oil: ${M.fmt(c.reserved)} DZD`,
+    `• Safe Spendable Balance: ${M.fmt(c.spendable)} DZD (${M.fmt(c.daily)} DZD/day)`,
+    `• Car Odometer: ${M.fmt(oil.odo)} km (Next oil at ${M.fmt(oil.nextOil)} km · Est. ${oil.predictedDate.en})`
+  ];
+  const text = lines.join('\n');
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Masrofi · مصروفي', text }); return; } catch {}
+  }
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+  M.toast(`${M.ico('checkc', 16)} ${ar ? 'تم نسخ ملخص الشهر للمشاركة' : 'Monthly summary copied to clipboard'}`);
 };

@@ -307,6 +307,7 @@ M.api = {
           paid: Boolean(r.paid),
           paidDay: r.paid_day !== null ? Number(r.paid_day) : null,
           kind: r.kind || 'fixed',
+          cycleDays: Number(r.cycle_days) || undefined,
           scanned: Boolean(r.scanned)
         };
         if (r.is_scheduled) {
@@ -368,6 +369,7 @@ M.api = {
           n: { ar: r.name_ar, en: r.name_en || r.name_ar },
           s: { ar: r.s_ar, en: r.s_en || r.s_ar },
           days: Number(r.days),
+          cycleDays: Number(r.cycle_days) || 365,
           ai: Boolean(r.ai)
         }))
       });
@@ -655,7 +657,10 @@ M.api = {
       }
       const { supabaseUrl, supabaseAnonKey } = this.getIntegrations();
       if (supabaseUrl && supabaseAnonKey && state?.onboarded) {
-        this.pushStateToSupabaseDirect(state).catch(() => {});
+        clearTimeout(this._supaPushTimer);
+        this._supaPushTimer = setTimeout(() => {
+          this.pushStateToSupabaseDirect(state).catch(() => {});
+        }, 350);
       }
     } catch {}
   },
@@ -680,6 +685,68 @@ M.api = {
   },
 
   /* ── Multi-Engine AI Vision + Native iOS Vision OCR + Smart Receipt/Bill Parser ── */
+  async preprocessImageForOCR(imageDataUrl) {
+    if (typeof document === 'undefined' || !imageDataUrl) return imageDataUrl;
+    return new Promise(resolve => {
+      try {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const maxDim = 1280;
+            let w = img.naturalWidth || img.width || 800;
+            let h = img.naturalHeight || img.height || 1000;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+              else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+            const c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            const ctx = c.getContext('2d');
+            ctx.filter = 'contrast(1.32) saturate(0.15) brightness(1.05)';
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(c.toDataURL('image/jpeg', 0.88));
+          } catch {
+            resolve(imageDataUrl);
+          }
+        };
+        img.onerror = () => resolve(imageDataUrl);
+        img.src = imageDataUrl;
+      } catch {
+        resolve(imageDataUrl);
+      }
+    });
+  },
+
+  cleanReceiptItemName(raw) {
+    const s = String(raw || '').replace(/[‘’'"`~=_<>|]+/g, '').trim();
+    const l = s.toLowerCase();
+    const dict = [
+      [/couscous|ouscous|كسكس/i, 'كسكس داري 1 كغ', 'Couscous DARI 1kg'],
+      [/huile|elio|زيت/i, 'زيت إيليو 1 لتر', 'Huile ELIO 1L'],
+      [/lait|candia|حليب/i, 'حليب كونديا 1 لتر', 'Lait CANDIA 1L'],
+      [/p[aâ]tes|ates|itali|عجائن|مقرونة/i, 'عجائن إيطاليانو 500 غ', 'Pâtes ITALIANO 500g'],
+      [/sucre|cre blan|سكر/i, 'سكر أبيض 1 كغ', 'Sucre Blanc 1kg'],
+      [/poulet|ulet frais|دجاج/i, 'دجاج طازج 1 كغ', 'Poulet Frais 1kg'],
+      [/tomate|طماطم/i, 'طماطم 1 كغ', 'Tomates 1kg'],
+      [/concombre|ncombre|خيار/i, 'خيار 1 كغ', 'Concombres 1kg'],
+      [/banane|anane|موز/i, 'موز 1 كغ', 'Bananes 1kg'],
+      [/orange|برتقال/i, 'برتقال 1 كغ', 'Oranges 1kg'],
+      [/salade|lade vert|خس|سلطة/i, 'خس أخضر', 'Salade Verte 1p'],
+      [/yaourt|dano|ياغورت|زبادي/i, 'ياغورت دانون ×4', 'Yaourt Danone x4'],
+      [/semoule|سميد/i, 'سميد 10 كغ', 'Semolina 10kg'],
+      [/oeuf|بيض/i, 'بيض 30 حبة', 'Eggs ×30'],
+      [/pain|baguette|خبز|باقيت/i, 'خبز باقيت', 'Baguette'],
+      [/caf[eé]|قهوة/i, 'قهوة 250 غ', 'Coffee 250g'],
+      [/fromage|جبن/i, 'جبن', 'Cheese']
+    ];
+    for (const [rx, ar, en] of dict) {
+      if (rx.test(l)) return { ar, en };
+    }
+    const clean = s.replace(/\b(?:tk|da|dzd)\b/gi, '').replace(/\s+/g, ' ').trim();
+    return { ar: clean || 'صنف مشتريات', en: clean || 'Item' };
+  },
+
   async runBrowserTesseractOCR(imageDataUrl) {
     if (typeof window === 'undefined' || typeof document === 'undefined') return '';
     try {
@@ -701,7 +768,8 @@ M.api = {
         });
       }
       if (window.Tesseract && typeof window.Tesseract.recognize === 'function') {
-        const res = await window.Tesseract.recognize(imageDataUrl, 'eng+fra+ara', {});
+        const enhanced = await this.preprocessImageForOCR(imageDataUrl);
+        const res = await window.Tesseract.recognize(enhanced, 'eng+fra+ara', {});
         return (res?.data?.text || '').trim();
       }
     } catch {}
@@ -757,12 +825,13 @@ M.api = {
     }
 
     // 3. Fast Parallel Cloud OCR (OCR.space Engine 2 + Engine 1) & Browser Tesseract.js
+    const enhancedUrl = await this.preprocessImageForOCR(imageDataUrl);
     const ocrTasks = [];
     if (typeof FormData !== 'undefined') {
-      const callOcrSpace = async (engine, lang) => {
+      const callOcrSpace = async (engine, lang, imgSrc) => {
         const fd = new FormData();
         fd.append('apikey', 'helloworld');
-        fd.append('base64Image', imageDataUrl);
+        fd.append('base64Image', imgSrc);
         fd.append('OCREngine', String(engine));
         if (lang) fd.append('language', lang);
         fd.append('isTable', 'true');
@@ -776,9 +845,9 @@ M.api = {
         if (!parsedText || parsedText.trim().length < 3) throw new Error('empty ocr');
         return parsedText.trim();
       };
-      ocrTasks.push(callOcrSpace(2, 'eng'));
-      ocrTasks.push(callOcrSpace(1, 'fre'));
-      ocrTasks.push(callOcrSpace(1, 'ara'));
+      ocrTasks.push(callOcrSpace(2, 'eng', enhancedUrl));
+      ocrTasks.push(callOcrSpace(1, 'fre', imageDataUrl));
+      ocrTasks.push(callOcrSpace(1, 'ara', imageDataUrl));
     }
     ocrTasks.push(this.runBrowserTesseractOCR(imageDataUrl).then(t => {
       if (!t || t.length < 3) throw new Error('empty tess');
@@ -803,13 +872,11 @@ M.api = {
     const lower = text.toLowerCase();
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-    // Helper: Fix thermal-font OCR '9' vs '0' at end of Algerian Dinar prices (e.g. '5 989 DA' -> 5980, '1x 989' -> 980)
     const fixThermalZero = v => {
       if (v >= 100 && v % 10 === 9) return v - 9;
       return v;
     };
 
-    // 1. Extract monetary amounts from a line (ignoring weights like 500g, 1kg, 1L, 1p, x4 and multiplier prefixes like '1 x ')
     const parseMoneyVal = (str, isTotalContext = false) => {
       let s = str
         .replace(/\b\d+\s*(?:kg|g|mg|ml|cl|l|p|pcs|كغ|غ|لتر|مل)\b/gi, ' ')
@@ -817,7 +884,6 @@ M.api = {
       if (!isTotalContext) {
         s = s.replace(/\b\d+\s*[xX×*]\s*/g, ' ');
       }
-      // Join thousand spaces like '5 980' -> '5980'
       const cleaned = s.replace(/(\b\d{1,3})[\s.](?=\d{3}(?:\D|$))/g, '$1').replace(',', '.');
       const matches = [...cleaned.matchAll(/\b(\d{2,6}(?:\.\d{1,2})?)\b/g)];
       const vals = [];
@@ -850,7 +916,6 @@ M.api = {
         if (vals.length) {
           totalCandidates.push(...vals);
         }
-        // Also inspect the next 4 lines in case 'TOTAL' and '5 980 DA' were split onto separate OCR lines!
         for (let j = i + 1; j <= Math.min(lines.length - 1, i + 4); j++) {
           const nextVals = parseMoneyVal(lines[j], true);
           if (nextVals.length) {
@@ -868,8 +933,9 @@ M.api = {
       amount = Math.max(...allCandidates);
     }
 
-    // 2. Extract individual receipt line items (e.g. 'Couscous DARI 1kg 980', 'Huile ELIO 1L 520')
+    // Extract & clean individual receipt line items
     const extractedItems = [];
+    const seenItemNames = new Set();
     const ignoreItemLine = /(total|ttc|merci|visite|facture|invoice|date|tel|tél|nif|nis|supermarch|permarch|سوبرماركت|المجموع|الإجمالي)/i;
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
@@ -878,28 +944,34 @@ M.api = {
       if (!hasLetters) continue;
       const itemPrices = parseMoneyVal(l, false);
       let p = itemPrices.length ? itemPrices[itemPrices.length - 1] : 0;
-      if (!p && i + 1 < lines.length && !/[a-zA-Z\u0600-\u06FF]{3,}/.test(lines[i + 1])) {
-        const nextPrices = parseMoneyVal(lines[i + 1], false);
-        if (nextPrices.length) p = nextPrices[0];
+      if (!p) {
+        for (let j = i + 1; j <= Math.min(lines.length - 1, i + 2); j++) {
+          const nextPrices = parseMoneyVal(lines[j], false);
+          if (nextPrices.length) { p = nextPrices[0]; break; }
+        }
       }
-      const cleanName = l
+      const rawName = l
         .replace(/\b\d+\s*[xX×*]\s*\d+\b/g, '')
         .replace(/\b\d{3,6}\b/g, '')
         .replace(/[=<>*_~]+/g, '')
         .trim();
-      if (cleanName.length >= 3 && p >= 30 && p < (amount || 100000)) {
-        extractedItems.push({ n: { ar: cleanName, en: cleanName }, q: 1, p });
+      if (rawName.length >= 3 && p >= 30 && p < (amount || 100000)) {
+        const cleanedLabel = this.cleanReceiptItemName(rawName);
+        if (!seenItemNames.has(cleanedLabel.en)) {
+          seenItemNames.add(cleanedLabel.en);
+          extractedItems.push({ n: cleanedLabel, q: 1, p });
+        }
       }
     }
 
-    // 3. Find meaningful title/header line from paper
+    // Find meaningful title/header line from paper
     const ignoreHeader = /^(facture|invoice|reçu|recu|ticket|bon|date|tel|tél|nif|nis|rc|art|total|montant|client|adresse|page|merci|www\.|http|\d+[\s/.-]*\d*)/i;
     const headerLine = lines.find(l => {
       const cl = l.replace(/[^a-zA-Z\u0600-\u06FF\sÀ-ÿ]/g, '').trim();
       return cl.length >= 4 && cl.length <= 42 && !ignoreHeader.test(cl);
     }) || '';
 
-    // 4. Classify Bill vs Receipt automatically from paper text
+    // Classify Bill vs Receipt + Predict Billing Cycle (cycleDays)
     const isElec = /(sonelgaz|سونلغاز|كهرباء|غاز|توزيع الكهرباء|électricité|electricite|kwh|pdl\b|sdc\b|sda\b|sde\b|sdo\b)/i.test(lower);
     const isWater = /(seaal|سيال|الجزائرية للمياه|\bade\b|فاتورة الماء|المياه|facture d'eau|eau et assainissement)/i.test(lower);
     const isNet = /(idoom|إيدوم|ايدوم|algérie télécom|algerie telecom|اتصالات الجزائر|adsl|ftth|fibre|4g lte)/i.test(lower);
@@ -925,41 +997,47 @@ M.api = {
       let targetId = 'custom';
       let kind = 'var';
       let cat = 'utilities';
+      let cycleDays = 30;
       let biller = { ar: headerLine || 'فاتورة التزامات', en: headerLine || 'Utility / Service Bill' };
 
       if (isElec) {
-        targetId = 'elec'; kind = 'var'; cat = 'utilities';
+        targetId = 'elec'; kind = 'var'; cat = 'utilities'; cycleDays = 60;
         biller = { ar: 'سونلغاز · الكهرباء والغاز', en: 'Sonelgaz · Power & Gas' };
         if (!amount) amount = 6800;
       } else if (isWater) {
-        targetId = 'water'; kind = 'var'; cat = 'utilities';
+        targetId = 'water'; kind = 'var'; cat = 'utilities'; cycleDays = 60;
         biller = { ar: 'سيال · فاتورة الماء', en: 'SEAAL · Water Bill' };
         if (!amount) amount = 2950;
       } else if (isNet) {
-        targetId = 'net'; kind = 'fixed'; cat = 'net';
+        targetId = 'net'; kind = 'fixed'; cat = 'net'; cycleDays = 30;
         biller = { ar: 'اتصالات الجزائر · Idoom', en: 'Algérie Télécom · Idoom' };
         if (!amount) amount = 2600;
       } else if (isMobile) {
-        targetId = 'subs'; kind = 'var'; cat = 'net';
+        targetId = 'subs'; kind = 'var'; cat = 'net'; cycleDays = 30;
         biller = { ar: headerLine || 'فاتورة الهاتف والإنترنت', en: headerLine || 'Mobile & Internet Bill' };
         if (!amount) amount = 1500;
       } else if (isIns) {
-        targetId = 'ins'; kind = 'fixed'; cat = 'car';
+        targetId = 'ins'; kind = 'fixed'; cat = 'car'; cycleDays = 365;
         biller = { ar: 'تأمين السيارة · SAA', en: 'Car Insurance · SAA' };
         if (!amount) amount = 18500;
       } else if (isFahs) {
-        targetId = 'fahs'; kind = 'fixed'; cat = 'car';
+        targetId = 'fahs'; kind = 'fixed'; cat = 'car'; cycleDays = 365;
         biller = { ar: 'المراقبة التقنية للسيارة', en: 'Vehicle Technical Inspection' };
         if (!amount) amount = 3200;
       } else if (!amount) {
         amount = 4200;
       }
 
+      if (/(trimestre|ثلاثي|فصل)/i.test(lower)) cycleDays = 90;
+      else if (/(bimestre|شهرين)/i.test(lower)) cycleDays = 60;
+      else if (/(annuel|سنوي|سنة)/i.test(lower)) cycleDays = 365;
+
       return {
         mode: 'bill',
         targetId,
         kind,
         cat,
+        cycleDays,
         biller,
         amount,
         dueDay,
@@ -969,7 +1047,6 @@ M.api = {
       };
     }
 
-    // Receipt classification
     let cat = 'groceries';
     let merchant = { ar: headerLine || 'سوبرماركت · مشتريات', en: headerLine || 'Supermarket Receipt' };
     if (isSupermarket && (/supermarch|permarch/i.test(lower) || !headerLine || /permarch/i.test(headerLine))) {
@@ -1023,7 +1100,6 @@ M.api = {
 
             let blueDominant = 0;
             let orangeWarm = 0;
-            let greenTeal = 0;
             let brightnessSum = 0;
             let edgeContrast = 0;
 
@@ -1041,7 +1117,6 @@ M.api = {
                 if (y < 24) {
                   if (b > r + 22 && b > 90) blueDominant++;
                   if (r > b + 30 && g > b + 10 && r > 120) orangeWarm++;
-                  if (g > r + 15 && b > r + 10 && g > 90) greenTeal++;
                 }
               }
             }
@@ -1056,6 +1131,7 @@ M.api = {
                 targetId: 'elec',
                 kind: 'var',
                 cat: 'utilities',
+                cycleDays: 60,
                 biller: { ar: 'سونلغاز · الكهرباء والغاز', en: 'Sonelgaz · Power & Gas' },
                 amount: Math.round(amt / 10) * 10,
                 dueDay: 18,
@@ -1094,15 +1170,15 @@ M.api = {
     const historyCtx = Array.isArray(priceHistory) && priceHistory.length
       ? `\nPreviously recorded family item/bill prices for price-hike comparison over time: ${JSON.stringify(priceHistory)}.\nIf any item/bill on the paper is more expensive than its historical lastPrice, include it in "detectedHikes": [{"n":{"ar":"اسم الصنف","en":"Item name"},"was":120,"now":150}].`
       : '';
-    const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English document classifier, receipt/bill OCR parser, and price-hike detector.
+    const sysPrompt = `You are Masrofi AI, a high-accuracy Arabic/French/English document classifier, receipt/bill OCR parser, billing-cycle predictor, and price-hike detector.
 First, AUTOMATICALLY recognize what kind of paper is in the image without asking the user:
-- Set "mode": "bill" if the paper is a utility bill (electricity/gas Sonelgaz, water SEAAL, internet/phone Idoom/Algérie Télécom/Mobilis/Djezzy/Ooredoo), car insurance (SAA, Alliance, CIAR), vehicle technical inspection, rent, installment, or an invoice with a due date.
+- Set "mode": "bill" if the paper is a utility bill (electricity/gas Sonelgaz, water SEAAL, internet/phone Idoom/Algérie Télécom/Mobilis/Djezzy/Ooredoo), car insurance (SAA, Alliance, CIAR), vehicle technical inspection, rent, installment, or an invoice with a due date. Also infer "cycleDays" (30 for monthly, 60 for bi-monthly Sonelgaz/SEAAL, 90 for quarterly, 365 for annual insurance/inspection).
 - Set "mode": "receipt" if the paper is a paid store/supermarket receipt (e.g. Supermarché), pharmacy ticket, fuel/petrol station receipt (Naftal), restaurant bill, or shopping ticket.${historyCtx}
 Read what is actually written on the paper (exact store/biller name, total amount in DA/DZD, and line items) and return ONLY a valid JSON object:
 If the paper is a purchase receipt ("mode": "receipt"):
 {"mode":"receipt","merchant":{"ar":"اسم المتجر المكتوب في الورقة","en":"Store name from paper"},"cat":"groceries"|"car"|"utilities"|"home"|"family"|"dining"|"health"|"net","amount":5980,"day":15,"items":[{"n":{"ar":"اسم الصنف من الورقة","en":"Item name"},"q":1,"p":980}],"detectedHikes":[]}
 If the paper is a bill or car obligation ("mode": "bill"):
-{"mode":"bill","targetId":"custom","kind":"var"|"fixed","cat":"utilities"|"car"|"net"|"family","biller":{"ar":"اسم الجهة في الفاتورة","en":"Biller name from paper"},"amount":3200,"dueDay":18,"isCurrentMonth":true,"dueText":{"ar":"تاريخ الاستحقاق من الورقة","en":"Due date from paper"},"detectedHikes":[]}`;
+{"mode":"bill","targetId":"custom","kind":"var"|"fixed","cat":"utilities"|"car"|"net"|"family","cycleDays":60,"biller":{"ar":"اسم الجهة في الفاتورة","en":"Biller name from paper"},"amount":3200,"dueDay":18,"isCurrentMonth":true,"dueText":{"ar":"تاريخ الاستحقاق من الورقة","en":"Due date from paper"},"detectedHikes":[]}`;
 
     const parseJsonCandidate = txt => {
       if (!txt || typeof txt !== 'string') return null;
@@ -1136,13 +1212,10 @@ If the paper is a bill or car obligation ("mode": "bill"):
             'x-goog-api-key': cfg.aiApiKey,
             ...(isBearer ? { Authorization: `Bearer ${cfg.aiApiKey}` } : {})
           };
-          const models = [cfg.aiModel || 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+          const models = [cfg.aiModel || 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
           for (const model of new Set(models)) {
             try {
-              const url = isBearer
-                ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
-                : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cfg.aiApiKey)}`;
-              const res = await this._fetchTimeout(url, {
+              const res = await this._fetchTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cfg.aiApiKey)}`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
@@ -1180,7 +1253,7 @@ If the paper is a bill or car obligation ("mode": "bill"):
       })());
     }
 
-    // Engine C: Keyless Cloud Vision AI (Pollinations OpenAI Vision + ExperientialLabs Gateway in parallel)
+    // Engine C: Keyless Cloud Vision AI (Pollinations OpenAI Vision)
     parallelCandidates.push((async () => {
       const res = await this._fetchTimeout('https://text.pollinations.ai/openai', {
         method: 'POST',
@@ -1209,7 +1282,6 @@ If the paper is a bill or car obligation ("mode": "bill"):
       })());
     }
 
-    // Race all recognition engines in parallel (max 6.8 seconds wait)
     try {
       const winner = await Promise.race([
         Promise.any(parallelCandidates),
@@ -1220,7 +1292,6 @@ If the paper is a bill or car obligation ("mode": "bill"):
       }
     } catch {}
 
-    // Guaranteed instant visual fallback if device is 100% offline
     return await this.analyzePaperVisualFallback(imageDataUrl, mode);
   },
 
@@ -1346,3 +1417,7 @@ if (typeof window !== 'undefined') {
     M.api.flushQueue();
   });
 }
+
+M.cleanReceiptItemName = (...args) => M.api.cleanReceiptItemName(...args);
+M.preprocessImageForOCR = (...args) => M.api.preprocessImageForOCR(...args);
+

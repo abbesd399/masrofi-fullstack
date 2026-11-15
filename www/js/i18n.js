@@ -116,14 +116,16 @@ M.STR = {
   }
 };
 M.t = k => {
-  const item = M.STR[M.s.lang]?.[k];
+  const lang = (M.s && M.s.lang) || 'ar';
+  const item = M.STR[lang]?.[k] ?? M.STR.ar?.[k];
   if (typeof item === 'function') {
     return (...args) => M.toWesternDigits(item(...args));
   }
   return typeof item === 'string' ? M.toWesternDigits(item) : item;
 };
 M.L = o => {
-  const val = (o && typeof o === 'object') ? o[M.s.lang] : o;
+  const lang = (M.s && M.s.lang) || 'ar';
+  const val = (o && typeof o === 'object') ? (o[lang] ?? o.ar ?? o.en) : o;
   return typeof val === 'string' ? M.toWesternDigits(val) : val;
 };
 M.fmt = n => Math.round(n).toLocaleString('en-US');

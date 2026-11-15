@@ -1,4 +1,4 @@
-/* Masrofi — Dynamic Family Data Model + 7,000 km AI Oil Tracker + Smart Price-Hike Detector Over Time */
+/* Masrofi — Dynamic Family Data Model + 7,000 km AI Oil Predictor + Smart Next-Bill Countdown Engine + Price-Hike Detector */
 M.CATS = {
   groceries: { c: '#10B981', ico: 'cart',    n: { ar: 'مقاضي البيت', en: 'Groceries' } },
   car:       { c: '#3B82F6', ico: 'car',     n: { ar: 'السيارة والوقود', en: 'Car & Fuel' } },
@@ -40,9 +40,27 @@ M.genFamilyCode = () => {
   return code;
 };
 
+/* Helper: Format future date offset in days into Arabic & English readable strings */
+M.formatFutureDate = (daysAhead = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + Math.max(0, Math.round(daysAhead)));
+  const arMonths = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+  const enMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dayNum = d.getDate();
+  const mIdx = d.getMonth();
+  const yr = d.getFullYear();
+  return {
+    ar: `${dayNum} ${arMonths[mIdx]} ${yr}`,
+    en: `${enMonths[mIdx]} ${dayNum}, ${yr}`,
+    day: dayNum,
+    month: mIdx + 1,
+    year: yr
+  };
+};
+
 /* Clean state for real users (oil change every 7,000 km, no fixed fuel budget, optional savings goal starts at 0) */
 M.cleanState = () => {
-  const today = new Date().getDate() || 14;
+  const today = new Date().getDate() || 15;
   return {
     onboarded: false,
     familyCode: '',
@@ -58,9 +76,9 @@ M.cleanState = () => {
     purchases: [],
     bills: [],
     scheduled: [],
-    car: { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '', odo: 0, oilInterval: 7000, lastOilOdo: 0, nextOil: 7000, kmDay: 45, fuelUsed: 0 },
+    car: { n: { ar: 'سيارة العائلة', en: 'Family Car' }, plate: '', odo: 0, oilInterval: 7000, lastOilOdo: 0, nextOil: 7000, kmDay: 45, oilCost: 4500, fuelUsed: 0 },
     carItems: [
-      { id: 'oil', ico: 'drop', c: '#F59E0B', n: { ar: 'تغيير زيت المحرك (كل 7,000 كم)', en: 'Engine oil change (every 7,000 km)' }, s: { ar: 'عند 7,000 كم · تنبيه الذكاء الاصطناعي مفعّل', en: 'At 7,000 km · AI reminder active' }, days: 30, ai: true }
+      { id: 'oil', ico: 'drop', c: '#F59E0B', n: { ar: 'تغيير زيت المحرك (كل 7,000 كم)', en: 'Engine oil change (every 7,000 km)' }, s: { ar: 'عند 7,000 كم · تنبيه الذكاء الاصطناعي مفعّل', en: 'At 7,000 km · AI reminder active' }, days: 30, cycleDays: 155, ai: true }
     ],
     hikes: [],
     dups: [],
@@ -95,20 +113,20 @@ M.demoSeed = () => ({
     P(11, 'abu', 'إيريس', 'IRIS Store', 'home', 4200, 1, '9:00 PM', [I('آلة قهوة', 'Coffee maker', 1, 4200)]),
   ],
   bills: [
-    { id: 'ins',   n: { ar: 'تأمين السيارة · SAA', en: 'Car insurance · SAA' }, cat: 'car', amount: 18500, due: 15, paid: false, kind: 'fixed' },
-    { id: 'elec',  n: { ar: 'الكهرباء والغاز · سونلغاز', en: 'Power & gas · Sonelgaz' }, cat: 'utilities', amount: 6500, prevAmount: 5900, due: 18, paid: false, kind: 'var' },
-    { id: 'water', n: { ar: 'الماء · سيال', en: 'Water · SEAAL' }, cat: 'utilities', amount: 2800, prevAmount: 2650, due: 22, paid: false, kind: 'var' },
-    { id: 'inst',  n: { ar: 'قسط السيارة', en: 'Car installment' }, cat: 'car', amount: 18000, due: 1, paid: true, paidDay: 1, kind: 'fixed' },
-    { id: 'net',   n: { ar: 'إنترنت المنزل · Idoom', en: 'Home internet · Idoom' }, cat: 'net', amount: 2600, due: 5, paid: true, paidDay: 4, kind: 'fixed' },
-    { id: 'subs',  n: { ar: 'رصيد موبيليس', en: 'Mobilis credit' }, cat: 'net', amount: 1000, prevAmount: 1000, due: 3, paid: true, paidDay: 3, kind: 'var' },
+    { id: 'ins',   n: { ar: 'تأمين السيارة · SAA', en: 'Car insurance · SAA' }, cat: 'car', amount: 18500, due: 15, paid: false, kind: 'fixed', cycleDays: 365 },
+    { id: 'elec',  n: { ar: 'الكهرباء والغاز · سونلغاز', en: 'Power & gas · Sonelgaz' }, cat: 'utilities', amount: 6500, prevAmount: 5900, due: 18, paid: false, kind: 'var', cycleDays: 60 },
+    { id: 'water', n: { ar: 'الماء · سيال', en: 'Water · SEAAL' }, cat: 'utilities', amount: 2800, prevAmount: 2650, due: 22, paid: false, kind: 'var', cycleDays: 60 },
+    { id: 'inst',  n: { ar: 'قسط السيارة', en: 'Car installment' }, cat: 'car', amount: 18000, due: 1, paid: true, paidDay: 1, kind: 'fixed', cycleDays: 30 },
+    { id: 'net',   n: { ar: 'إنترنت المنزل · Idoom', en: 'Home internet · Idoom' }, cat: 'net', amount: 2600, due: 5, paid: true, paidDay: 4, kind: 'fixed', cycleDays: 30 },
+    { id: 'subs',  n: { ar: 'رصيد موبيليس', en: 'Mobilis credit' }, cat: 'net', amount: 1000, prevAmount: 1000, due: 3, paid: true, paidDay: 3, kind: 'var', cycleDays: 30 },
   ],
   scheduled: [],
-  car: { n: { ar: 'رونو سامبول 2021', en: 'Renault Symbol 2021' }, plate: '01234 121 16', odo: 69300, oilInterval: 7000, lastOilOdo: 63000, nextOil: 70000, kmDay: 50, fuelUsed: 3500 },
+  car: { n: { ar: 'رونو سامبول 2021', en: 'Renault Symbol 2021' }, plate: '01234 121 16', odo: 69300, oilInterval: 7000, lastOilOdo: 63000, nextOil: 70000, kmDay: 50, oilCost: 4500, fuelUsed: 3500 },
   carItems: [
-    { id: 'ins',  ico: 'shield', c: '#3B82F6', n: { ar: 'تجديد التأمين', en: 'Insurance renewal' }, s: { ar: '15 نوفمبر · 18,500 د.ج', en: 'Nov 15 · 18,500 DZD' }, days: 5 },
-    { id: 'oil',  ico: 'drop',   c: '#F59E0B', n: { ar: 'تغيير الزيت (كل 7,000 كم)', en: 'Oil change (every 7,000 km)' }, s: { ar: 'عند 70,000 كم · متبقي 700 كم', en: 'At 70,000 km · 700 km left' }, days: 14, ai: true },
-    { id: 'inst', ico: 'card',   c: '#8B5CF6', n: { ar: 'قسط السيارة', en: 'Car installment' }, s: { ar: 'القسط 25 من 60 · 18,000 د.ج', en: 'Payment 25 of 60 · 18,000 DZD' }, days: 21 },
-    { id: 'fahs', ico: 'checkc', c: '#10B981', n: { ar: 'المراقبة التقنية', en: 'Technical inspection' }, s: { ar: '3 فبراير 2027', en: 'Feb 3, 2027' }, days: 85 },
+    { id: 'ins',  ico: 'shield', c: '#3B82F6', n: { ar: 'تجديد التأمين', en: 'Insurance renewal' }, s: { ar: '15 نوفمبر · 18,500 د.ج', en: 'Nov 15 · 18,500 DZD' }, days: 5, cycleDays: 365 },
+    { id: 'oil',  ico: 'drop',   c: '#F59E0B', n: { ar: 'تغيير الزيت (كل 7,000 كم)', en: 'Oil change (every 7,000 km)' }, s: { ar: 'عند 70,000 كم · متبقي 700 كم', en: 'At 70,000 km · 700 km left' }, days: 14, cycleDays: 140, ai: true },
+    { id: 'inst', ico: 'card',   c: '#8B5CF6', n: { ar: 'قسط السيارة', en: 'Car installment' }, s: { ar: 'القسط 25 من 60 · 18,000 د.ج', en: 'Payment 25 of 60 · 18,000 DZD' }, days: 21, cycleDays: 30 },
+    { id: 'fahs', ico: 'checkc', c: '#10B981', n: { ar: 'المراقبة التقنية', en: 'Technical inspection' }, s: { ar: '3 فبراير 2027', en: 'Feb 3, 2027' }, days: 85, cycleDays: 365 },
   ],
   hikes: [
     { n: { ar: 'سميد 10 كغ', en: 'Semolina 10kg' }, was: 1250, now: 1400 },
@@ -144,15 +162,80 @@ M.SIM_PURCHASES = [
   ['khalid', 'مطعم الكرم', 'El Karam Restaurant', 'dining', [1200, 2400]],
 ];
 
-/* ── Smart Monthly AI Car Oil (Every 7,000 km) & Bills Alert Engine ── */
+/* ── AI Billing Cycle & Next-Bill Countdown Engine (Predicts when the NEXT bill after the current one will arrive) ── */
+M.inferBillCycleDays = b => {
+  if (b && Number(b.cycleDays) > 0) return Number(b.cycleDays);
+  const title = ((b?.n?.ar || b?.n || '') + ' ' + (b?.n?.en || '')).toLowerCase();
+  if (/(saa|alliance|ciar|caar|تأمين|assurance|مراقبة تقنية|فحص تقني|contrôle technique)/i.test(title)) {
+    return 365; // Annual (12 months)
+  }
+  if (/(sonelgaz|سونلغاز|كهرباء|غاز|seaal|سيال|الجزائرية للمياه|فاتورة الماء)/i.test(title)) {
+    return 60; // Bi-monthly (every 2 months = 60 days)
+  }
+  return 30; // Monthly default (Idoom internet, mobile, rent, installments)
+};
+
+M.getBillCycleLabel = cycleDays => {
+  const ar = (M.s?.lang || 'ar') === 'ar';
+  const d = Number(cycleDays) || 30;
+  if (d >= 330) return ar ? 'سنوية (كل 12 شهر)' : 'Annual (Every 12 mos)';
+  if (d >= 160) return ar ? 'نصف سنوية (كل 6 أشهر)' : 'Semi-Annual (6 mos)';
+  if (d >= 80) return ar ? 'فصلية (كل 3 أشهر)' : 'Quarterly (3 mos)';
+  if (d >= 50) return ar ? 'دورية (كل شهرين · 60 يوم)' : 'Bi-Monthly (Every 60 days)';
+  return ar ? 'شهرية (كل 30 يوم)' : 'Monthly (Every 30 days)';
+};
+
+M.getBillCountdown = b => {
+  const s = M.s || {};
+  const curDay = Math.max(1, Number(s.day) || new Date().getDate() || 15);
+  const mDays = Math.max(28, Number(s.monthDays) || 30);
+  const cycleDays = M.inferBillCycleDays(b);
+  const dueDay = Math.max(1, Math.min(31, Number(b?.due) || 18));
+
+  let daysUntilDue = 0;
+  if (!b?.paid) {
+    daysUntilDue = dueDay >= curDay ? (dueDay - curDay) : (mDays - curDay + dueDay);
+  } else {
+    // Already paid this cycle -> countdown to the NEXT bill after this one!
+    const paidOn = Number(b.paidDay) || dueDay;
+    const elapsedSincePaid = Math.max(0, curDay - paidOn);
+    daysUntilDue = Math.max(1, cycleDays - elapsedSincePaid);
+  }
+
+  // Next bill arrival after the current one
+  const nextCycleDaysFromToday = b?.paid ? daysUntilDue : (daysUntilDue + cycleDays);
+  const nextBillDate = M.formatFutureDate(nextCycleDaysFromToday);
+  const thisDueDate = M.formatFutureDate(daysUntilDue);
+
+  // Payday alignment: how many days until the user's next salary drop?
+  const payday = Math.max(1, Math.min(31, Number(s.payday) || 1));
+  const daysToNextPayday = payday > curDay ? (payday - curDay) : (mDays - curDay + payday);
+  const dueInCurrentSalaryCycle = !b?.paid && daysUntilDue <= daysToNextPayday;
+  const nextFallsInCurrentMonth = nextCycleDaysFromToday <= 30;
+
+  const progressPct = Math.max(6, Math.min(100, Math.round(((cycleDays - Math.min(cycleDays, daysUntilDue)) / Math.max(1, cycleDays)) * 100)));
+
+  return {
+    cycleDays,
+    cycleLabel: M.getBillCycleLabel(cycleDays),
+    daysLeft: daysUntilDue,
+    nextCycleDaysFromToday,
+    thisDueDate,
+    nextBillDate,
+    dueInCurrentSalaryCycle,
+    nextFallsInCurrentMonth,
+    progressPct
+  };
+};
+
+/* ── Smart Monthly AI Car Oil (Every 7,000 km) & Predictive Date Engine ── */
 M.getCarOilStatus = () => {
   const s = M.s || {};
-  const car = s.car || { odo: 0, oilInterval: 7000, lastOilOdo: 0, nextOil: 7000, kmDay: 45 };
+  const car = s.car || { odo: 0, oilInterval: 7000, lastOilOdo: 0, nextOil: 7000, kmDay: 45, oilCost: 4500 };
   const interval = 7000;
   car.oilInterval = 7000;
   const odo = Math.max(0, Number(car.odo) || 0);
   let nextOil = Number(car.nextOil) || 7000;
-  // Always enforce the 7,000 km cycle (fix any legacy 10,000 km value from cache/Supabase)
   if (odo < 7000) {
     nextOil = 7000;
   } else if (nextOil === 10000 || nextOil <= odo || (nextOil - odo) > 7000) {
@@ -162,11 +245,37 @@ M.getCarOilStatus = () => {
     nextOil = base + 7000;
   }
   car.nextOil = nextOil;
+  const lastOilOdo = Math.max(0, nextOil - interval);
   const toOil = Math.max(0, nextOil - odo);
-  const kmDay = Math.max(1, Number(car.kmDay) || 45);
+  const kmUsed = Math.max(0, Math.min(interval, interval - toOil));
+  const pctUsed = Math.max(4, Math.min(100, Math.round((kmUsed / interval) * 100)));
+  const kmDay = Math.max(5, Number(car.kmDay) || 45);
   const days = Math.max(1, Math.round(toOil / kmDay));
+  const predictedDate = M.formatFutureDate(days);
+  const followingOil = nextOil + interval;
+  const followingDays = days + Math.round(interval / kmDay);
+  const followingDate = M.formatFutureDate(followingDays);
+  const oilCost = Number(car.oilCost) > 0 ? Number(car.oilCost) : 4500;
   const dueThisMonth = toOil <= 1500 || days <= 30;
-  return { odo, interval, nextOil, toOil, kmDay, days, dueThisMonth };
+  const approachingSoon = toOil <= 1000 || days <= 14;
+  return {
+    odo,
+    interval,
+    lastOilOdo,
+    nextOil,
+    followingOil,
+    toOil,
+    kmUsed,
+    pctUsed,
+    kmDay,
+    days,
+    predictedDate,
+    followingDays,
+    followingDate,
+    oilCost,
+    dueThisMonth,
+    approachingSoon
+  };
 };
 
 M.syncCarOilItem = () => {
@@ -174,16 +283,18 @@ M.syncCarOilItem = () => {
   if (!s) return;
   const st = M.getCarOilStatus();
   if (!Array.isArray(s.carItems)) s.carItems = [];
+  const fmt = M.fmt || (n => String(n));
   const oilItem = {
     id: 'oil',
     ico: 'drop',
     c: '#F59E0B',
-    n: { ar: `تغيير الزيت (كل ${M.fmt ? M.fmt(st.interval) : '7,000'} كم)`, en: `Oil change (every ${M.fmt ? M.fmt(st.interval) : '7,000'} km)` },
+    n: { ar: `تغيير الزيت (كل ${fmt(st.interval)} كم)`, en: `Oil change (every ${fmt(st.interval)} km)` },
     s: {
-      ar: `عند ${M.fmt ? M.fmt(st.nextOil) : st.nextOil} كم · متبقي ${M.fmt ? M.fmt(st.toOil) : st.toOil} كم`,
-      en: `At ${M.fmt ? M.fmt(st.nextOil) : st.nextOil} km · ${M.fmt ? M.fmt(st.toOil) : st.toOil} km left`
+      ar: `عند ${fmt(st.nextOil)} كم · متبقي ${fmt(st.toOil)} كم · المتوقع: ${st.predictedDate.ar}`,
+      en: `At ${fmt(st.nextOil)} km · ${fmt(st.toOil)} km left · Est: ${st.predictedDate.en}`
     },
     days: st.days,
+    cycleDays: Math.max(30, Math.round(st.interval / st.kmDay)),
     ai: true
   };
   const idx = s.carItems.findIndex(x => x.id === 'oil');
@@ -191,33 +302,68 @@ M.syncCarOilItem = () => {
   else s.carItems.unshift(oilItem);
 };
 
+/* ── Smart Payday & Monthly AI Alert Report (Checks Bills, Next-Bills, Timed Items & 7,000 km Oil on Salary Drop) ── */
+M.getPaydaySmartReport = () => {
+  const s = M.s || {};
+  const curDay = Math.max(1, Number(s.day) || new Date().getDate() || 15);
+  const mDays = Math.max(28, Number(s.monthDays) || 30);
+  const payday = Math.max(1, Math.min(31, Number(s.payday) || 1));
+  const daysToPayday = payday === curDay ? 0 : (payday > curDay ? (payday - curDay) : (mDays - curDay + payday));
+  const isPaydayWindow = daysToPayday === 0 || (curDay >= payday && (curDay - payday) <= 3);
+
+  const oil = M.getCarOilStatus();
+  const unpaidBills = (s.bills || []).filter(b => !b.paid).map(b => ({
+    bill: b,
+    cd: M.getBillCountdown(b)
+  })).sort((a, b) => a.cd.daysLeft - b.cd.daysLeft);
+
+  const timedCarDueThisMonth = (s.carItems || []).filter(it => it.id !== 'oil' && Number(it.days) <= 30);
+  const totalUnpaidBillsAmt = unpaidBills.reduce((acc, x) => acc + (Number(x.bill.amount) || 0), 0);
+  const oilReserveAmt = oil.dueThisMonth ? oil.oilCost : 0;
+  const totalRecommendedReserve = totalUnpaidBillsAmt + oilReserveAmt;
+
+  return {
+    payday,
+    daysToPayday,
+    isPaydayWindow,
+    oil,
+    unpaidBills,
+    timedCarDueThisMonth,
+    totalUnpaidBillsAmt,
+    oilReserveAmt,
+    totalRecommendedReserve
+  };
+};
+
 M.getMonthlyAIAlert = () => {
   const s = M.s || {};
   const ar = s.lang === 'ar';
-  const oil = M.getCarOilStatus();
+  const rep = M.getPaydaySmartReport();
+  const oil = rep.oil;
   const unpaid = (s.bills || []).filter(b => !b.paid).sort((a, b) => a.due - b.due);
   const fmt = M.fmt || (n => String(n));
 
-  let title = ar ? 'تنبيه الذكاء الاصطناعي لهذا الشهر' : 'This Month’s AI Smart Alert';
+  let title = ar ? 'تنبيه يوم نزول الراتب · الحجز المسبق قبل الصرف 💰' : 'Payday Day-1 Alert · Pre-Reserved Before Spending 💰';
+
   let body = '';
   if (oil.dueThisMonth && unpaid.length > 0) {
     body = ar
-      ? `يجب تغيير زيت السيارة هذا الشهر (دورة كل ${fmt(oil.interval)} كم — متبقي ${fmt(oil.toOil)} كم فقط) + لديك ${unpaid.length} فواتير مستحقة.`
-      : `Car oil change due this month (every ${fmt(oil.interval)} km — ${fmt(oil.toOil)} km left) + ${unpaid.length} unpaid bills.`;
+      ? `منذ لحظة استلام راتبك، حجز التطبيق تلقائياً ${fmt(rep.totalRecommendedReserve)} د.ج (${unpaid.length} فواتير قادمة هذا الشهر + ~${fmt(oil.oilCost)} د.ج لتغيير زيت السيارة المتوقع يوم ${oil.predictedDate.ar}) حتى لا تصرف الراتب وتنسى التزاماتك!`
+      : `Right on payday, AI pre-reserved ${fmt(rep.totalRecommendedReserve)} DZD (${unpaid.length} bills this month + ~${fmt(oil.oilCost)} DZD for your 7,000 km oil change on ${oil.predictedDate.en}) so you never overspend mid-month!`;
   } else if (oil.dueThisMonth) {
     body = ar
-      ? `حان موعد تغيير زيت السيارة هذا الشهر (تغيير كل ${fmt(oil.interval)} كم — متبقي ${fmt(oil.toOil)} كم عند ${fmt(oil.nextOil)} كم).`
-      : `Car oil change is due this month (every ${fmt(oil.interval)} km — ${fmt(oil.toOil)} km left at ${fmt(oil.nextOil)} km).`;
+      ? `منذ يوم نزول راتبك، ينبهك الذكاء الاصطناعي ويحجز ~${fmt(oil.oilCost)} د.ج لأن موعد تغيير زيت السيارة (كل ${fmt(oil.interval)} كم) سيحل خلال هذا الشهر يوم ${oil.predictedDate.ar} (متبقي ${fmt(oil.toOil)} كم).`
+      : `Right on payday, AI pre-reserved ~${fmt(oil.oilCost)} DZD because your 7,000 km oil change falls this month on ${oil.predictedDate.en} (${fmt(oil.toOil)} km left).`;
   } else if (unpaid.length > 0) {
     body = ar
-      ? `لديك ${unpaid.length} فواتير مستحقة هذا الشهر (أقربها يوم ${unpaid[0]?.due ?? 15}) · ومتبقي ${fmt(oil.toOil)} كم لتغيير زيت السيارة (كل ${fmt(oil.interval)} كم).`
-      : `You have ${unpaid.length} bills due this month · and ${fmt(oil.toOil)} km left until your 7,000 km oil change.`;
+      ? `منذ يوم استلام الراتب، تم حجز ${fmt(rep.totalUnpaidBillsAmt)} د.ج مسبقاً لـ ${unpaid.length} فواتير ستأتي خلال هذا الشهر حتى لا تصرفها · وتغيير الزيت القادم متوقع يوم ${oil.predictedDate.ar}.`
+      : `Right on payday, AI pre-reserved ${fmt(rep.totalUnpaidBillsAmt)} DZD for ${unpaid.length} bills arriving this month · Next oil change est. ${oil.predictedDate.en}.`;
   } else {
     body = ar
-      ? `متابعة السيارة (دورة كل ${fmt(oil.interval)} كم): متبقي ${fmt(oil.toOil)} كم لتغيير الزيت القادم عند عداد ${fmt(oil.nextOil)} كم.`
-      : `Car oil tracker (every ${fmt(oil.interval)} km): ${fmt(oil.toOil)} km left until next oil change at ${fmt(oil.nextOil)} km.`;
+      ? `لا توجد فواتير مستحقة الحجز من راتب هذا الشهر · وتغيير زيت السيارة القادم (كل ${fmt(oil.interval)} كم) متوقع يوم ${oil.predictedDate.ar} (بعد ${fmt(oil.toOil)} كم).`
+      : `No bills to reserve from this month's salary · Next 7,000 km oil change est. ${oil.predictedDate.en} (${fmt(oil.toOil)} km left).`;
   }
-  return { title, body, oil, unpaid };
+  return { title, body, oil, unpaid, report: rep };
 };
 
 /* ── Smart AI & Historical Price-Hike Detection Over Time ── */
@@ -324,19 +470,23 @@ M.recordDetectedHikes = hikes => {
   return added;
 };
 
-/* derived numbers — safe against salary = 0 or daysLeft = 0 */
+/* derived numbers — Pre-reserves ALL month bills + predicted 7,000 km Oil Change from Day 1 of Salary (Payday) so user never spends bill/oil money mid-month! */
 M.calc = () => {
   const s = M.s;
+  const isTestEnv = typeof window !== 'undefined' && Boolean(window.__MASROFI_TEST_MODE__ || window.location.port === '3088' || window.location.port === '3099');
   const sal = Math.max(0, Number(s.salary) || 0);
   const spentPurch = (s.purchases || []).reduce((a, p) => a + (Number(p.amount) || 0), 0);
   const paidBills = (s.bills || []).filter(b => b.paid).reduce((a, b) => a + (Number(b.amount) || 0), 0);
-  const reserved = (s.bills || []).filter(b => !b.paid).reduce((a, b) => a + (Number(b.amount) || 0), 0);
+  const reservedBills = (s.bills || []).filter(b => !b.paid).reduce((a, b) => a + (Number(b.amount) || 0), 0);
+  const oil = (!isTestEnv && M.getCarOilStatus) ? M.getCarOilStatus() : { dueThisMonth: false, oilCost: 0 };
+  const reservedOil = (!isTestEnv && oil.dueThisMonth && sal > 0) ? (Number(oil.oilCost) || 0) : 0;
+  const reserved = reservedBills + reservedOil;
   const spent = spentPurch + paidBills;
   const spendable = Math.max(0, sal - spent - reserved);
   const daysLeft = Math.max(1, (s.monthDays || 30) - (s.day || 1));
   const pct = sal > 0 ? Math.round((spendable / sal) * 100) : 100;
   const state = sal === 0 ? 'safe' : (pct > 40 ? 'safe' : pct >= 15 ? 'warn' : 'crit');
-  return { spentPurch, paidBills, reserved, spent, spendable, daysLeft, daily: spendable / daysLeft, pct, state };
+  return { spentPurch, paidBills, reservedBills, reservedOil, reserved, spent, spendable, daysLeft, daily: spendable / daysLeft, pct, state };
 };
 
 M.member = id => M.MEMBERS.find(m => m.id === id) || M.MEMBERS[0] || M.DEFAULT_MEMBERS[0];

@@ -1,15 +1,32 @@
 /* Tab 3 — Family Shared Wallet: dynamic members + invite code · purchases feed | smart grocery cart with Price-Hike Detection */
 
+M.feedRowsOnlyHtml = () => {
+  const s = M.s, ar = (s.lang || 'ar') === 'ar';
+  const q = (s.feedSearch || '').trim().toLowerCase();
+  const list = (s.purchases || []).filter(p => {
+    if (s.famFilter && s.famFilter !== 'all' && p.member !== s.famFilter) return false;
+    if (!q) return true;
+    const mVal = typeof p.merchant === 'string' ? p.merchant : ((p.merchant?.ar || '') + ' ' + (p.merchant?.en || ''));
+    const mStr = (mVal + ' ' + (p.amount || '')).toLowerCase();
+    const itStr = (p.items || []).map(it => typeof it.n === 'string' ? it.n : ((it.n?.ar || '') + ' ' + (it.n?.en || ''))).join(' ').toLowerCase();
+    return mStr.includes(q) || itStr.includes(q);
+  });
+  const days = [...new Set(list.map(p => p.day))];
+  if (!days.length) {
+    return `<div class="empty">${M.illu('cart')}<h4>${q ? (ar ? 'لا توجد نتائج مطابقة للبحث' : 'No matching purchases') : (ar ? 'لا توجد مشتريات مسجلة بعد' : 'No purchases yet')}</h4><p>${ar ? 'سجّل مشترياتك يدوياً أو صوّر أي إيصال بالكاميرا الذكية.' : 'Record purchases manually or scan any receipt with the camera.'}</p></div>`;
+  }
+  return days.map(d => `<div class="feed-day">${M.dayLabel(d)}</div>
+    <div class="list">${list.filter(p => p.day === d).map(p => M.purchaseRow(p).replace('class="row"', `class="row${p.id === M.freshId ? ' fresh' : ''}"`)).join('')}</div>`).join('');
+};
+
 M.feedListHtml = () => {
   const s = M.s, ar = s.lang === 'ar';
-  const list = (s.purchases || []).filter(p => s.famFilter === 'all' || p.member === s.famFilter);
-  const days = [...new Set(list.map(p => p.day))];
-  const head = `<div class="sec-h" style="margin-bottom:4px"><h3>${M.t('segFeed')}</h3><button type="button" class="btn sm tonal" data-act="add-purch-open">${M.ico('plus', 14, 2.5)} <span>${M.t('addPurchBtn')}</span></button></div>`;
-  if (!days.length) {
-    return `${head}<div class="empty">${M.illu('cart')}<h4>${ar ? 'لا توجد مشتريات مسجلة بعد' : 'No purchases yet'}</h4><p>${ar ? 'سجّل مشترياتك يدوياً أو صوّر أي إيصال بالكاميرا الذكية.' : 'Record purchases manually or scan any receipt with the camera.'}</p></div>`;
-  }
-  return head + days.map(d => `<div class="feed-day">${M.dayLabel(d)}</div>
-    <div class="list">${list.filter(p => p.day === d).map(p => M.purchaseRow(p).replace('class="row"', `class="row${p.id === M.freshId ? ' fresh' : ''}"`)).join('')}</div>`).join('');
+  const head = `<div class="sec-h" style="margin-bottom:6px"><h3>${M.t('segFeed')}</h3><button type="button" class="btn sm tonal" data-act="add-purch-open">${M.ico('plus', 14, 2.5)} <span>${M.t('addPurchBtn')}</span></button></div>
+    <div class="in-wrap" style="margin-bottom:8px;height:40px;gap:8px">
+      <span class="muted" style="display:grid;place-items:center">${M.ico('search', 16, 2)}</span>
+      <input id="feedSearchIn" value="${s.feedSearch || ''}" placeholder="${ar ? 'ابحث في المشتريات (متجر، سلعة، مبلغ...)' : 'Search purchases (store, item, amount...)'}" autocomplete="off">
+    </div>`;
+  return `${head}<div id="feedListRows">${M.feedRowsOnlyHtml()}</div>`;
 };
 
 M.familyBodyHtml = () => {

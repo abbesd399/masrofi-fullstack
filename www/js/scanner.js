@@ -820,9 +820,8 @@ M.scanResult = (mode, customImage = null) => {
     M.scan.mode = mode;
   }
   const samp = M.BILL_SAMPLES[M.scan.billIdx || 0];
-  const isRealPhoto = Boolean(customImage);
 
-  const rMerchant = aiExt?.merchant ? M.L(aiExt.merchant) : (ar ? 'فاتورة مشتريات' : 'Purchase Receipt');
+  const rMerchant = aiExt?.merchant ? M.L(aiExt.merchant) : (ar ? 'سوبرماركت · Supermarché' : 'Supermarché');
   const rAmount = (aiExt?.amount && Number(aiExt.amount) > 0) ? Number(aiExt.amount) : 3450;
   const rCat = (aiExt?.cat && M.CATS[aiExt.cat]) ? aiExt.cat : 'groceries';
   const curMemberId = aiExt?.member && M.MEMBERS.some(m => m.id === aiExt.member)
@@ -835,6 +834,10 @@ M.scanResult = (mode, customImage = null) => {
   const bDueDay = aiExt?.dueDay || samp.dueDay || 18;
   const bDueText = aiExt?.dueText ? M.L(aiExt.dueText) : M.L(samp.dueText);
   const bIsCurrent = aiExt?.isCurrentMonth !== undefined ? Boolean(aiExt.isCurrentMonth) : samp.isCurrentMonth;
+  const bCycleDays = Number(aiExt?.cycleDays) || (M.inferBillCycleDays ? M.inferBillCycleDays({ n: { ar: bBiller, en: bBiller } }) : 30);
+  const bCountdown = M.getBillCountdown
+    ? M.getBillCountdown({ n: { ar: bBiller, en: bBiller }, due: bDueDay, cycleDays: bCycleDays, paid: false })
+    : { daysLeft: 10, cycleDays: bCycleDays, cycleLabel: '', nextBillDate: { ar: 'الشهر القادم', en: 'Next month' }, nextCycleDaysFromToday: 40 };
 
   const dup = mode === 'receipt'
     ? (rAmount > 0 && (M.s.purchases || []).some(p => M.normItemKey(p.merchant) === M.normItemKey(rMerchant) && Number(p.amount) === Number(rAmount) && p.day === M.s.day))
@@ -860,11 +863,24 @@ M.scanResult = (mode, customImage = null) => {
         [M.t('biller'), bBiller],
         [M.t('billType'), M.t(bKind === 'var' ? 'billVar' : 'billFixed')],
         [M.t('amount'), M.fmt(bAmount) + ' ' + M.t('cur')],
-        [M.t('dueDate'), bDueText],
-        [M.t('autoDest'), bIsCurrent ? M.t('destMonth') : M.t('destSched')]
+        [M.t('dueDate'), `${bDueText} (⏳ ${ar ? `باقي ${bCountdown.daysLeft} يوم` : `${bCountdown.daysLeft}d left`})`],
+        [ar ? 'الفاتورة القادمة المتوقعة بعدها' : 'Next Bill After This', `${bCountdown.nextBillDate[ar ? 'ar' : 'en']} (${bCountdown.cycleLabel})`]
       ];
 
   let alerts = '';
+  if (mode === 'bill') {
+    alerts += `<div class="ai-pill" style="margin-bottom:8px">
+      <span class="spark">${M.ico('spark', 16, 2)}</span>
+      <div style="flex:1;min-width:0">
+        <b>${ar ? 'توقع الذكاء الاصطناعي للفاتورة القادمة وتنبيه الراتب' : 'AI Next-Bill & Payday Predictor'}</b>
+        <div class="muted small" style="margin-top:2px">
+          ${ar
+            ? `تتكرر هذه الفاتورة <b>${bCountdown.cycleLabel}</b> · ستأتي الفاتورة التي بعد هذه يوم <b style="color:var(--primary)">${bCountdown.nextBillDate.ar}</b> (بعد ${bCountdown.nextCycleDaysFromToday} يوم)، وسينبهك التطبيق تلقائياً عند نزول راتبك لحجز مبلغها.`
+            : `Repeats <b>${bCountdown.cycleLabel}</b> · The next bill after this arrives on <b style="color:var(--primary)">${bCountdown.nextBillDate.en}</b> (in ${bCountdown.nextCycleDaysFromToday}d) with automatic payday alerts.`}
+        </div>
+      </div>
+    </div>`;
+  }
   if (detectedHikes.length > 0) {
     const h = detectedHikes[0];
     alerts += `<div class="alert-box" style="--bc:var(--crit);margin-bottom:8px">
@@ -919,15 +935,23 @@ M.scanResult = (mode, customImage = null) => {
           <label>${M.t('biller')}<input id="scEditBiller" value="${bBiller}" autocomplete="off"></label>
           <label>${M.t('amount')} (${M.t('cur')})<input id="scEditAmount" type="text" inputmode="decimal" value="${bAmount}" placeholder="0"></label>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
           <label>${M.t('billType')}
             <select id="scEditKind">
               <option value="var" ${bKind === 'var' ? 'selected' : ''}>${M.t('billVar')}</option>
               <option value="fixed" ${bKind === 'fixed' ? 'selected' : ''}>${M.t('billFixed')}</option>
             </select>
           </label>
-          <label>${ar ? 'يوم الاستحقاق بالشهر' : 'Due Day (1-30)'}
+          <label>${ar ? 'يوم الاستحقاق' : 'Due Day'}
             <input id="scEditDueDay" type="text" inputmode="numeric" value="${bDueDay}">
+          </label>
+          <label>${ar ? 'دورة التكرار' : 'Cycle'}
+            <select id="scEditCycle">
+              <option value="30" ${bCycleDays === 30 ? 'selected' : ''}>${ar ? 'كل شهر (30ي)' : 'Monthly'}</option>
+              <option value="60" ${bCycleDays === 60 ? 'selected' : ''}>${ar ? 'كل شهرين (60ي)' : 'Bi-Monthly'}</option>
+              <option value="90" ${bCycleDays === 90 ? 'selected' : ''}>${ar ? 'كل 3 أشهر' : 'Quarterly'}</option>
+              <option value="365" ${bCycleDays === 365 ? 'selected' : ''}>${ar ? 'سنوي (365ي)' : 'Annual'}</option>
+            </select>
           </label>
         </div>
       </div>
@@ -979,6 +1003,7 @@ M.acts['scan-confirm'] = el => {
   const editedMember = document.getElementById('scEditMember')?.value;
   const editedKind = document.getElementById('scEditKind')?.value;
   const editedDueDay = Number(M.toWesternDigits(String(document.getElementById('scEditDueDay')?.value || ''))) || 18;
+  const editedCycle = Number(document.getElementById('scEditCycle')?.value) || Number(aiExt?.cycleDays) || 30;
 
   M.scan.customImage = null;
   M.scan.aiExtracted = null;
@@ -987,7 +1012,7 @@ M.acts['scan-confirm'] = el => {
   const rAmount = editedAmount > 0 ? editedAmount : (aiExt?.amount ? Number(aiExt.amount) : 3450);
   const rMerchant = editedMerchant
     ? { ar: editedMerchant, en: editedMerchant }
-    : (aiExt?.merchant || { ar: 'فاتورة مشتريات', en: 'Purchase Receipt' });
+    : (aiExt?.merchant || { ar: 'سوبرماركت · Supermarché', en: 'Supermarché' });
   const rCat = editedCat || ((aiExt?.cat && M.CATS[aiExt.cat]) ? aiExt.cat : 'groceries');
   const rMember = editedMember || aiExt?.member || M.s.currentMemberId || 'abu';
 
@@ -1065,13 +1090,14 @@ M.acts['scan-confirm'] = el => {
         existing.amount = bAmount;
         existing.n = bBiller;
         existing.kind = bKind;
+        existing.cycleDays = editedCycle;
         existing.paid = false;
         existing.scanned = true;
         M.freshBillId = existing.id;
         if (M.api && isRealPhoto) M.api.updateBill(existing.id, existing).catch(() => {});
       } else {
         const nid = targetId || ('b_' + Date.now());
-        const nb = { id: nid, n: bBiller, cat: aiExt?.cat || samp.cat || 'utilities', amount: bAmount, due: editedDueDay || aiExt?.dueDay || samp.dueDay || 18, paid: false, kind: bKind, scanned: true };
+        const nb = { id: nid, n: bBiller, cat: aiExt?.cat || samp.cat || 'utilities', amount: bAmount, due: editedDueDay || aiExt?.dueDay || samp.dueDay || 18, paid: false, kind: bKind, cycleDays: editedCycle, scanned: true };
         M.s.bills.unshift(nb);
         M.freshBillId = nid;
         if (M.api && isRealPhoto) M.api.saveBill(nb).catch(() => {});
@@ -1079,7 +1105,7 @@ M.acts['scan-confirm'] = el => {
     } else {
       const schedId = isRealPhoto ? ('b_sched_' + Date.now()) : 'ins2';
       const sched = {
-        id: schedId, n: bBiller || { ar: 'تأمين أكسنت · SAA', en: 'Accent insurance · SAA' }, cat: 'car', amount: bAmount || 19800, kind: 'fixed',
+        id: schedId, n: bBiller || { ar: 'تأمين أكسنت · SAA', en: 'Accent insurance · SAA' }, cat: 'car', amount: bAmount || 19800, kind: 'fixed', cycleDays: editedCycle || 365,
         dueStr: { ar: 'يستحق 8 ديسمبر', en: 'Due Dec 8' }, remStr: { ar: 'تذكير 1 ديسمبر', en: 'Reminder Dec 1' }, isScheduled: true
       };
       const existingIdx = M.s.scheduled.findIndex(b => b.id === schedId);
@@ -1153,7 +1179,7 @@ M.acts['scan-manual'] = () => {
   const ar = M.s.lang === 'ar';
   const todayStr = new Date().toISOString().slice(0, 10);
   M.sheet.open(M.t('manualT'), `<form class="manual-form" data-form="manual">
-    <label>${M.t('name')}<input name="n" required placeholder="${ar ? 'مثال: فاتورة الكهرباء / رسوم المدرسة' : 'e.g. Electricity bill / School fees'}" value="" autocomplete="off"></label>
+    <label>${M.t('name')}<input name="n" required placeholder="${ar ? 'مثال: فاتورة الكهرباء / تأمين السيارة / الإنترنت' : 'e.g. Electricity bill / Car insurance / Internet'}" value="" autocomplete="off"></label>
     <label>${M.t('billType')}
       <div class="kind-pick">
         <button type="button" class="kp-btn on" data-act="pick-kind" data-v="fixed">${M.ico('shield', 14, 2)} ${M.t('billFixed')}</button>
@@ -1165,23 +1191,33 @@ M.acts['scan-manual'] = () => {
       <label>${M.t('amount')} (${M.t('cur')})<input name="a" type="text" inputmode="decimal" required placeholder="1500" value=""></label>
       <label>${M.t('dueDate')}<input name="d" type="date" required value="${todayStr}"></label>
     </div>
+    <label>${ar ? 'دورة تكرار الفاتورة (لتشغيل العداد وتوقع الفاتورة القادمة)' : 'Billing Cycle (For Countdown & Next-Bill Prediction)'}
+      <select name="cycleDays">
+        <option value="30">${ar ? 'كل شهر (30 يوم)' : 'Monthly (30 days)'}</option>
+        <option value="60">${ar ? 'كل شهرين · سونلغاز/سيال (60 يوم)' : 'Bi-Monthly · Sonelgaz/SEAAL (60 days)'}</option>
+        <option value="90">${ar ? 'كل 3 أشهر (90 يوم)' : 'Quarterly (90 days)'}</option>
+        <option value="180">${ar ? 'كل 6 أشهر (180 يوم)' : 'Semi-Annual (180 days)'}</option>
+        <option value="365">${ar ? 'سنوي · تأمين/مراقبة (365 يوم)' : 'Annual · Insurance/Inspection (365 days)'}</option>
+      </select>
+    </label>
     <button class="btn" type="submit">${M.ico('check', 18, 2.5)} ${M.t('save')}</button></form>`);
 };
 M.saveManual = f => {
   const n = f.n.value.trim();
   const rawA = typeof f.a.value === 'string' ? M.toWesternDigits(f.a.value) : f.a.value;
   const a = +rawA, kind = f.kind?.value || 'fixed', d = new Date(f.d.value + 'T00:00');
+  const cycleDays = parseInt(f.cycleDays?.value || '30', 10) || (M.inferBillCycleDays ? M.inferBillCycleDays({ n: { ar: n, en: n } }) : 30);
   if (!n || !(a > 0)) return;
   const nid = 'm' + Date.now();
   let billPayload;
   const now = new Date();
   if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
-    billPayload = { id: nid, n: { ar: n, en: n }, cat: 'family', amount: a, due: d.getDate(), paid: false, kind, isScheduled: false };
+    billPayload = { id: nid, n: { ar: n, en: n }, cat: 'utilities', amount: a, due: d.getDate(), paid: false, kind, cycleDays, isScheduled: false };
     M.s.bills.push(billPayload);
   } else {
     const dsAr = d.toLocaleDateString('ar-SA-u-nu-latn-ca-gregory', { month: 'short', day: 'numeric' });
     const dsEn = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    billPayload = { id: nid, n: { ar: n, en: n }, cat: 'family', amount: a, kind, dueStr: { ar: 'يستحق ' + dsAr, en: 'Due ' + dsEn }, remStr: { ar: 'تذكير بداية الشهر', en: 'Start-of-month reminder' }, isScheduled: true };
+    billPayload = { id: nid, n: { ar: n, en: n }, cat: 'utilities', amount: a, kind, cycleDays, dueStr: { ar: 'يستحق ' + dsAr, en: 'Due ' + dsEn }, remStr: { ar: 'تذكير بداية الشهر', en: 'Start-of-month reminder' }, isScheduled: true };
     M.s.scheduled.push(billPayload);
   }
   if (M.api) {

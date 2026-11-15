@@ -159,28 +159,58 @@ M.sendExternalOSNotification = async (title, body, delaySec = 0) => {
   return false;
 };
 
-/* Schedule background notifications (7,000 km Oil Change + Unpaid Monthly Bills) so they fire when outside the app */
+/* Schedule Payday Day-1 Notification (Fires on the exact day the user receives their salary — BEFORE they spend it mid-month!) */
 M.scheduleBackgroundNotifications = async () => {
   try {
     if (!M.s || !M.s.onboarded) return;
     const aiAlert = M.getMonthlyAIAlert ? M.getMonthlyAIAlert() : null;
     const unpaid = (M.s.bills || []).filter(b => !b.paid).sort((a, b) => a.due - b.due);
+    const payday = Math.max(1, Math.min(28, Number(M.s.payday) || 1));
 
-    // Native iOS WKWebView background queue
+    // Auto-fire immediate notification on Payday (Day 1 of receiving salary) if there are bills or 7,000 km oil due this month
+    const now = new Date();
+    const curMonthKey = `${now.getFullYear()}-${now.getMonth() + 1}-${payday}`;
+    const isPaydayToday = (Number(M.s.day) === Number(M.s.payday || 1)) || (now.getDate() === Number(M.s.payday || 1));
+    if (isPaydayToday && aiAlert && (unpaid.length > 0 || aiAlert.oil?.dueThisMonth) && M.s._lastPaydayAlertKey !== curMonthKey) {
+      M.s._lastPaydayAlertKey = curMonthKey;
+      setTimeout(() => {
+        if (typeof M.triggerMonthlyAINotification === 'function') M.triggerMonthlyAINotification();
+      }, 900);
+    }
+
+    // 1. Native iOS WKWebView background queue (fires on Payday morning at 09:00 AM)
     if (window.webkit?.messageHandlers?.masrofiScheduleBg && aiAlert) {
       window.webkit.messageHandlers.masrofiScheduleBg.postMessage({
         monthlyTitle: aiAlert.title,
         monthlyBody: aiAlert.body,
+        payday: payday,
         unpaidCount: unpaid.length
       });
     }
 
-    // Service Worker background reminder queue
+    // 2. Capacitor LocalNotifications monthly Payday trigger (iOS & Android)
+    try {
+      const LN = window.Capacitor?.Plugins?.LocalNotifications;
+      if (LN && typeof LN.schedule === 'function' && aiAlert) {
+        await LN.schedule({
+          notifications: [{
+            id: 7001,
+            title: aiAlert.title,
+            body: aiAlert.body,
+            schedule: { on: { day: payday, hour: 9, minute: 0 }, repeats: true, allowWhileIdle: true },
+            sound: 'default'
+          }]
+        });
+      }
+    } catch {}
+
+    // 3. Service Worker background reminder queue
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller && aiAlert) {
       navigator.serviceWorker.controller.postMessage({
         type: 'SYNC_BG_ALERTS',
         title: aiAlert.title,
         body: aiAlert.body,
+        payday: payday,
         unpaidBills: unpaid.map(b => ({ name: M.L(b.n), amount: b.amount, due: b.due }))
       });
     }
